@@ -6,21 +6,25 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "pydantic>=2.9",
-    "pydantic-settings>=2.5",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.5,<3",
     "typer>=0.12",
     "streamlit>=1.38",
     "httpx>=0.27",
-    "tenacity>=8.5",
+    "tenacity>=9,<10",
     "structlog>=24.4",
-    "yfinance>=1.6.0",
+    "yfinance>=1.6.0,<2",
     "diskcache>=5.6",
     "jinja2>=3.1",
     "weasyprint>=62.0",
-    "anthropic>=0.40",
-    "openai>=1.50",
-    "google-genai>=0.3",
-    "ollama>=0.3",
+    # I tetti di major sono deliberati: ognuno di questi SDK ha cambiato API in
+    # modo incompatibile tra major. In particolare anthropic 0.x ha una
+    # superficie diversa da 1.x (temperature accettato, Text Completions
+    # presenti), quindi un vincolo ">=0.40" installerebbe codice incompatibile.
+    "anthropic>=1,<2",
+    "openai>=3,<4",
+    "google-genai>=2,<3",
+    "ollama>=0.6,<1",
 ]
 
 [dependency-groups]
@@ -31,6 +35,9 @@ dev = [
     "pytest-cov>=5.0",
     "responses>=0.25",
     "vcrpy>=6.0",
+    # Importato dai test per costruire le eccezioni degli SDK: anthropic e
+    # openai tipizzano le loro eccezioni su httpx2, non su httpx.
+    "httpx2>=2",
 ]
 
 [project.scripts]
