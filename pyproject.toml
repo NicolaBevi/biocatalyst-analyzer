@@ -54,8 +54,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N", "C4", "PTH"]
 [tool.ruff.lint.isort]
 known-first-party = ["biocatalyst"]
 
+# python_version è disaccoppiato da requires-python: i .pyi di numpy 2.x
+# (dipendenza transitiva di streamlit/yfinance) usano sintassi PEP 695 che il
+# parser di mypy rifiuta sotto 3.12, anche per stub non importati direttamente
+# dal nostro codice. Il codice sorgente resta comunque compatibile 3.11+:
+# questo valore serve solo a mypy per interpretare gli stub installati.
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 mypy_path = "src"
 explicit_package_bases = true

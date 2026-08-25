@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Self
@@ -9,7 +9,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class LLMProviderName(str, Enum):
+class LLMProviderName(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     DEEPSEEK = "deepseek"
@@ -48,9 +48,9 @@ class Settings(BaseSettings):
     # --- Data provider esterni --------------------------------------------------
     sec_edgar_user_agent: str = Field(
         description=(
-            'Richiesto dalla fair-access policy SEC: senza uno User-Agent '
+            "Richiesto dalla fair-access policy SEC: senza uno User-Agent "
             'identificativo (es. "BioCatalystAnalyzer nome@email.it") le '
-            'chiamate a data.sec.gov ricevono 403.'
+            "chiamate a data.sec.gov ricevono 403."
         ),
     )
     finnhub_api_key: SecretStr | None = None
@@ -78,7 +78,8 @@ class Settings(BaseSettings):
             LLMProviderName.GROQ: self.groq_api_key,
             LLMProviderName.GEMINI: self.gemini_api_key,
         }
-        if self.default_provider in key_by_provider and key_by_provider[self.default_provider] is None:
+        provider_needs_key = self.default_provider in key_by_provider
+        if provider_needs_key and key_by_provider[self.default_provider] is None:
             raise ValueError(
                 f"DEFAULT_PROVIDER è '{self.default_provider.value}' ma la relativa "
                 f"API key non è impostata nel .env."
