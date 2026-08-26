@@ -1,6 +1,6 @@
 from biocatalyst.analysis.catalysts import ACTIVE_TRIAL_STATUSES, catalysts_from_trials
 from biocatalyst.analysis.expected_value import (
-    DEFAULT_INVESTMENTS_EUR,
+    DEFAULT_INVESTMENTS_USD,
     ScenarioInput,
     build_expected_value_analysis,
     build_scenario_analysis,
@@ -23,17 +23,23 @@ from biocatalyst.analysis.risk import (
     runway_pressure_score,
     short_squeeze_score,
 )
+from biocatalyst.analysis.validation import (
+    check_analyst_target,
+    collect_data_warnings,
+)
 
 __all__ = [
     "ACTIVE_TRIAL_STATUSES",
     "DEFAULT_BURN_QUARTERS",
-    "DEFAULT_INVESTMENTS_EUR",
+    "DEFAULT_INVESTMENTS_USD",
     "MIN_BURN_QUARTERS",
     "ScenarioInput",
     "build_expected_value_analysis",
     "build_scenario_analysis",
     "cash_runway_months",
+    "check_analyst_target",
     "catalysts_from_trials",
+    "collect_data_warnings",
     "compute_financial_metrics",
     "dilution_risk_score",
     "expected_price",

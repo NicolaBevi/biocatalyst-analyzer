@@ -14,8 +14,13 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, model_validator
 
 from biocatalyst.models.analysis import Catalyst, FinancialMetrics, TAMEstimate
+from biocatalyst.models.raw_data import MarketData
 
 Rating = Literal["BUY", "HOLD", "SELL"]
+
+#: Lingua del report, scelta dall'utente. Riguarda solo i testi prodotti:
+#: i dati numerici e le fonti restano identici.
+ReportLanguage = Literal["it", "en"]
 
 DEFAULT_DISCLAIMER = (
     "Questo report ha finalità puramente informative. È generato in parte da "
@@ -50,16 +55,24 @@ class ScenarioAnalysis(BaseModel):
 
 
 class ExpectedValueRow(BaseModel):
-    investment_eur: float = Field(gt=0)
+    """Una riga della tabella del valore atteso, in dollari.
+
+    Il titolo quota in dollari: calcolare in quella valuta evita di introdurre
+    un'assunzione sul cambio dentro il risultato dell'investimento.
+    """
+
+    investment_usd: float = Field(gt=0)
     shares_purchasable: float = Field(ge=0)
-    expected_value_eur: float
+    expected_value_usd: float
     expected_roi_pct: float
 
 
 class ExpectedValueAnalysis(BaseModel):
-    eur_usd_rate: float = Field(gt=0)
-    rate_date: date
     rows: list[ExpectedValueRow]
+    #: Cambio di riferimento, puramente informativo: serve a un lettore in area
+    #: euro per sapere quanto vale l'importo in dollari, non entra nel calcolo.
+    eur_usd_rate: float | None = Field(default=None, gt=0)
+    rate_date: date | None = None
 
 
 class AcquisitionAssessment(BaseModel):
@@ -76,6 +89,10 @@ class SourceEntry(BaseModel):
 class SourceQuality(BaseModel):
     sources_consulted: list[SourceEntry] = Field(default_factory=list)
     missing_data: list[str] = Field(default_factory=list)
+    #: Dati presenti ma sospetti (es. un target analisti incoerente col
+    #: prezzo). Distinti dai dati mancanti: qui il numero c'è, ma non va
+    #: preso per buono senza verificarlo.
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ReportSections(BaseModel):
@@ -90,12 +107,21 @@ class Report(BaseModel):
     ticker: str
     company_name: str | None = None
     report_date: date
+    #: Momento esatto in cui i dati sono stati interrogati. Distinto da
+    #: `report_date`: un report rigenerato da cache può avere dati più vecchi
+    #: della data di redazione, e il lettore deve poterlo vedere.
+    generated_at: datetime
+    language: ReportLanguage = "it"
     current_price: float = Field(gt=0)
     rating: Rating
     average_analyst_target: float | None = Field(default=None, gt=0)
     main_catalyst: str
     sections: ReportSections
     financial_metrics: FinancialMetrics
+    #: Capitalizzazione, flottante e short interest: il formato del report li
+    #: richiede esplicitamente, quindi viaggiano col report invece di restare
+    #: nei soli dati grezzi.
+    market_snapshot: MarketData | None = None
     catalysts: list[Catalyst]
     scenarios: ScenarioAnalysis
     expected_value: ExpectedValueAnalysis

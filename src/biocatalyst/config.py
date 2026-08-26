@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     llm_request_timeout_seconds: int = 60
     llm_max_retries: int = 3
     http_request_timeout_seconds: int = 30
+
+    #: Lingua di default dei report ("it" o "en"), sovrascrivibile per singola analisi.
+    report_language: Literal["it", "en"] = "it"
 
     # --- Logging -------------------------------------------------------------------------
     log_level: str = "INFO"

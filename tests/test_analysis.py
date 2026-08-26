@@ -383,36 +383,19 @@ def test_expected_value_calcola_azioni_valore_e_roi() -> None:
         rate_date=date(2026, 8, 25),
     )
 
-    assert analysis.eur_usd_rate == 1.1662
-    assert analysis.rate_date == date(2026, 8, 25)
-    assert len(analysis.rows) == 2
-
-    riga_500 = analysis.rows[0]
-    assert riga_500.investment_eur == 500.0
-    # 500 EUR * 1,1662 = 583,10 USD / 5,00 = 116,62 azioni
-    assert riga_500.shares_purchasable == pytest.approx(116.62)
-    # 116,62 azioni * 6,965 USD = 812,26 USD / 1,1662 = 696,50 EUR
-    assert riga_500.expected_value_eur == pytest.approx(696.50, abs=0.01)
-    assert riga_500.expected_roi_pct == pytest.approx(39.3)
+    assert len(analysis.rows) == 1
+    riga = analysis.rows[0]
+    assert riga.investment_usd == 1000.0
+    # 1000 USD / 5,00 = 200 azioni
+    assert riga.shares_purchasable == pytest.approx(200.0)
+    # 200 azioni * 6,965 USD di prezzo atteso = 1.393 USD
+    assert riga.expected_value_usd == pytest.approx(1393.0)
+    assert riga.expected_roi_pct == pytest.approx(39.3)
 
 
-def test_expected_value_il_roi_non_dipende_dall_importo() -> None:
-    analysis = build_expected_value_analysis(
-        current_price_usd=5.0,
-        scenarios=_scenari(),  # type: ignore[arg-type]
-        eur_usd_rate=1.1662,
-        rate_date=date(2026, 8, 25),
-    )
-    assert analysis.rows[0].expected_roi_pct == pytest.approx(analysis.rows[1].expected_roi_pct)
-    # Il valore atteso invece scala linearmente con l'investimento.
-    assert analysis.rows[1].expected_value_eur == pytest.approx(
-        analysis.rows[0].expected_value_eur * 2
-    )
-
-
-def test_expected_value_il_cambio_si_semplifica() -> None:
-    """Convertendo ingresso e uscita allo stesso tasso, il valore in euro non dipende dal cambio."""
-    comune = {
+def test_expected_value_il_cambio_e_solo_un_riferimento() -> None:
+    """Il calcolo è in dollari: il cambio non deve entrarci."""
+    comune: dict[str, object] = {
         "current_price_usd": 5.0,
         "scenarios": _scenari(),
         "rate_date": date(2026, 8, 25),
@@ -420,27 +403,48 @@ def test_expected_value_il_cambio_si_semplifica() -> None:
     a = build_expected_value_analysis(eur_usd_rate=1.05, **comune)  # type: ignore[arg-type]
     b = build_expected_value_analysis(eur_usd_rate=1.25, **comune)  # type: ignore[arg-type]
 
-    assert a.rows[0].expected_value_eur == pytest.approx(b.rows[0].expected_value_eur)
-    # Le azioni acquistabili invece cambiano davvero.
-    assert a.rows[0].shares_purchasable != pytest.approx(b.rows[0].shares_purchasable)
+    assert a.rows[0].expected_value_usd == pytest.approx(b.rows[0].expected_value_usd)
+    assert a.rows[0].shares_purchasable == pytest.approx(b.rows[0].shares_purchasable)
+    # Il tasso resta allegato al report come riferimento.
+    assert a.eur_usd_rate == 1.05
+
+
+def test_expected_value_senza_cambio_si_calcola_comunque() -> None:
+    analysis = build_expected_value_analysis(
+        current_price_usd=5.0,
+        scenarios=_scenari(),  # type: ignore[arg-type]
+    )
+    assert analysis.eur_usd_rate is None
+    assert analysis.rate_date is None
+    assert analysis.rows[0].expected_roi_pct == pytest.approx(39.3)
+
+
+def test_expected_value_il_roi_non_dipende_dall_importo() -> None:
+    analysis = build_expected_value_analysis(
+        current_price_usd=5.0,
+        scenarios=_scenari(),  # type: ignore[arg-type]
+        investments_usd=(1000.0, 2000.0),
+    )
+    assert analysis.rows[0].expected_roi_pct == pytest.approx(analysis.rows[1].expected_roi_pct)
+    assert analysis.rows[1].expected_value_usd == pytest.approx(
+        analysis.rows[0].expected_value_usd * 2
+    )
 
 
 def test_expected_value_importi_personalizzati() -> None:
     analysis = build_expected_value_analysis(
         current_price_usd=5.0,
         scenarios=_scenari(),  # type: ignore[arg-type]
-        eur_usd_rate=1.1662,
-        rate_date=date(2026, 8, 25),
-        investments_eur=(250.0,),
+        investments_usd=(250.0,),
     )
-    assert [r.investment_eur for r in analysis.rows] == [250.0]
+    assert [r.investment_usd for r in analysis.rows] == [250.0]
 
 
 @pytest.mark.parametrize(
     ("prezzo", "tasso", "importi", "atteso"),
     [
-        (0.0, 1.1, (500.0,), "prezzo corrente"),
-        (5.0, 0.0, (500.0,), "tasso EUR/USD"),
+        (0.0, 1.1, (1000.0,), "prezzo corrente"),
+        (5.0, 0.0, (1000.0,), "tasso EUR/USD"),
         (5.0, 1.1, (0.0,), "importo investito"),
         (5.0, 1.1, (-100.0,), "importo investito"),
     ],
@@ -452,9 +456,9 @@ def test_expected_value_rifiuta_input_non_validi(
         build_expected_value_analysis(
             current_price_usd=prezzo,
             scenarios=_scenari(),  # type: ignore[arg-type]
+            investments_usd=importi,
             eur_usd_rate=tasso,
             rate_date=date(2026, 8, 25),
-            investments_eur=importi,
         )
 
 

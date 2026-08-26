@@ -35,7 +35,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 3** — Data provider (yfinance, SEC EDGAR, ClinicalTrials.gov, openFDA, Finnhub, Frankfurter)
 - [x] **Fase 4** — Analysis engine (cash runway, burn rate, squeeze score, EV/ROI) — **copertura 100%**
 - [x] **Fase 5** — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
-- [ ] Fase 6 — Rendering report (Markdown/PDF/JSON)
+- [x] **Fase 6** — Rendering report (Markdown/PDF/JSON/HTML), bilingue IT/EN
 - [ ] Fase 7 — CLI Typer (analyze/screen/compare)
 - [ ] Fase 8 — Modalità screen (universo titoli, filtri, ranking)
 - [ ] Fase 9 — UI Streamlit
@@ -62,12 +62,16 @@ src/biocatalyst/
 │   ├── risk.py           # squeeze score, dilution risk
 │   ├── expected_value.py # EV, ROI, variazioni target
 │   ├── catalysts.py      # estrazione e ordinamento per imminenza
-│   └── metrics.py        # compute_financial_metrics() -> (metriche, note)
+│   ├── metrics.py        # compute_financial_metrics() -> (metriche, note)
+│   └── validation.py     # controlli di plausibilità (target price)
 ├── agents/         # i 4 agenti + pipeline — FATTO (Fase 5)
 │   ├── base.py     #   BaseAgent: run(context)->context, chiavi richieste
 │   ├── data_collector.py, analyst.py, market_news.py, report_writer.py
 │   └── pipeline.py #   analyze(ticker) con callback di avanzamento
-├── report/         # rendering md/pdf/json — vuoto, Fase 6
+├── report/         # rendering md/json/html/pdf — FATTO (Fase 6)
+│   ├── labels.py   #   etichette e spiegazioni IT/EN
+│   ├── markdown.py, html.py, pdf.py (WeasyPrint)
+│   └── __init__.py #   render_json(), save_report(path) per estensione
 ├── cli.py          # entrypoint Typer — solo stub (comando `version`)
 └── app.py          # UI Streamlit — solo stub
 ```
@@ -105,6 +109,14 @@ src/biocatalyst/
 | **Il sentiment di settore viene sovrascritto coi valori misurati** dopo la chiamata all'LLM | È un dato misurato da yfinance, non una deduzione: il modello non deve poterlo alterare. Verificato da un test in cui il modello dichiara un sentiment inventato |
 | **DataCollectorAgent non usa l'LLM** | Il suo compito è raccogliere fatti verificabili; un modello linguistico introdurrebbe solo il rischio di inventarli |
 | **`_sponsor_query()` toglie la forma societaria dalla ragione sociale** | ClinicalTrials.gov registra "Ensysce Biosciences", la SEC "Ensysce Biosciences, Inc.": senza la normalizzazione la ricerca per sponsor non troverebbe nulla |
+| **Expected value in dollari su $1.000**, non in euro | Il titolo quota in dollari: calcolare in quella valuta evita di far entrare un'assunzione sul cambio nel risultato. Il tasso EUR/USD resta allegato come riferimento informativo, e la sua assenza non blocca più il report |
+| **Report bilingue IT/EN**, scelto per singola analisi | Prompt di sistema, etichette e spiegazioni sono in `agents/prompts.py` e `report/labels.py`. Un test verifica che le due lingue abbiano esattamente le stesse chiavi, altrimenti resterebbe testo non tradotto |
+| **`deepseek-v4-pro` per il solo agente scrittore**, flash per gli altri | Il report finale è il punto in cui la qualità del ragionamento conta di più. Costa: ~142s contro i ~40s del flash. Gli altri agenti restano su flash |
+| **Analista: una sola chiamata LLM per valutazione clinica e TAM** (`TrialAndMarketAssessment`) | Il contesto del prompt è identico nei due casi: sdoppiarlo raddoppiava i token senza migliorare le risposte. Da 4 chiamate LLM per report a 3 |
+| **Spiegazioni fisse nel report, non generate dall'LLM** | Descrivono il metodo di calcolo del sistema e devono restare identiche fra un report e l'altro; farle generare significherebbe pagarle ogni volta e rischiare che cambino |
+| **`generated_at` distinto da `report_date`** | Un report rigenerato da cache può avere dati più vecchi della data di redazione: il lettore deve poter vedere entrambe |
+| **Avvisi sulla qualità del dato in cima al report**, non in fondo | Se un dato è inaffidabile va saputo prima di leggerlo. Il controllo sul target analisti nasce da un caso reale: yfinance riporta $8,25 per ENSC contro un prezzo di $0,403 (20,5 volte), quasi certamente una copertura non aggiornata |
+| **`market_snapshot` dentro `Report`** | Capitalizzazione, flottante e short interest sono richiesti esplicitamente dal formato: lasciarli nei soli dati grezzi li rendeva irraggiungibili al rendering (bug trovato guardando il primo report generato) |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive

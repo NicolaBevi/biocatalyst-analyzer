@@ -4,11 +4,10 @@ Realizza la regola esplicita del progetto: l'LLM fornisce soltanto le
 probabilità degli scenari e i prezzi obiettivo; ogni operazione aritmetica
 avviene qui, così i numeri del report sono sempre coerenti fra loro.
 
-Nota metodologica sul cambio: entrata e uscita sono convertite allo stesso
-tasso EUR/USD, quindi il cambio si semplifica e il valore atteso in euro
-dipende solo dal rapporto fra prezzo atteso e prezzo corrente. Il tasso resta
-necessario per calcolare quante azioni si comprano e va citato nel report,
-ma **il rischio di cambio fra ingresso e uscita non è modellato**.
+Il calcolo è in dollari, la valuta in cui il titolo quota: così nessuna
+assunzione sul cambio entra nel risultato dell'investimento. Il tasso EUR/USD
+resta allegato al report come riferimento informativo per un lettore in area
+euro, ma **il rischio di cambio non è modellato**.
 """
 
 from __future__ import annotations
@@ -23,8 +22,8 @@ from biocatalyst.models.report import (
     ScenarioAnalysis,
 )
 
-#: Importi richiesti dal formato di report.
-DEFAULT_INVESTMENTS_EUR: tuple[float, ...] = (500.0, 1000.0)
+#: Importo di riferimento della tabella del valore atteso, in dollari.
+DEFAULT_INVESTMENTS_USD: tuple[float, ...] = (1000.0,)
 
 
 @dataclass(frozen=True)
@@ -93,41 +92,35 @@ def expected_roi_pct(scenarios: ScenarioAnalysis, current_price: float) -> float
 def build_expected_value_analysis(
     current_price_usd: float,
     scenarios: ScenarioAnalysis,
-    eur_usd_rate: float,
-    rate_date: date,
-    investments_eur: tuple[float, ...] = DEFAULT_INVESTMENTS_EUR,
+    investments_usd: tuple[float, ...] = DEFAULT_INVESTMENTS_USD,
+    eur_usd_rate: float | None = None,
+    rate_date: date | None = None,
 ) -> ExpectedValueAnalysis:
-    """Tabella del valore atteso per ciascun importo di investimento.
+    """Tabella del valore atteso per ciascun importo investito, in dollari.
 
-    `eur_usd_rate` è quanti dollari vale un euro (es. 1.1662).
+    `eur_usd_rate` è solo un riferimento allegato al report (quanti dollari
+    vale un euro): non entra in alcun calcolo.
     """
     if current_price_usd <= 0:
         raise ValueError("il prezzo corrente deve essere positivo")
-    if eur_usd_rate <= 0:
+    if eur_usd_rate is not None and eur_usd_rate <= 0:
         raise ValueError("il tasso EUR/USD deve essere positivo")
 
     price_expected = expected_price(scenarios)
     roi_pct = expected_roi_pct(scenarios, current_price_usd)
 
     rows: list[ExpectedValueRow] = []
-    for investment_eur in investments_eur:
-        if investment_eur <= 0:
+    for investment_usd in investments_usd:
+        if investment_usd <= 0:
             raise ValueError("l'importo investito deve essere positivo")
-        shares = investment_eur * eur_usd_rate / current_price_usd
-        # Il cambio si semplifica fra ingresso e uscita: resta il rapporto
-        # fra prezzo atteso e prezzo corrente.
-        value_eur = shares * price_expected / eur_usd_rate
+        shares = investment_usd / current_price_usd
         rows.append(
             ExpectedValueRow(
-                investment_eur=investment_eur,
+                investment_usd=investment_usd,
                 shares_purchasable=shares,
-                expected_value_eur=value_eur,
+                expected_value_usd=shares * price_expected,
                 expected_roi_pct=roi_pct,
             )
         )
 
-    return ExpectedValueAnalysis(
-        eur_usd_rate=eur_usd_rate,
-        rate_date=rate_date,
-        rows=rows,
-    )
+    return ExpectedValueAnalysis(rows=rows, eur_usd_rate=eur_usd_rate, rate_date=rate_date)

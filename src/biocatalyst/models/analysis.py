@@ -72,6 +72,18 @@ class TAMEstimate(BaseModel):
     methodology_notes: str
 
 
+class TrialAndMarketAssessment(BaseModel):
+    """Valutazione clinica e stima del TAM in un unico schema.
+
+    Sono unite di proposito: chiederle in due chiamate separate raddoppierebbe
+    il prompt di contesto (identico in entrambe) senza migliorare la qualità
+    delle risposte, e i token si pagano.
+    """
+
+    clinical: ClinicalAssessment
+    tam: TAMEstimate
+
+
 class AnalysisBundle(BaseModel):
     """Output completo del ClinicalFinancialAnalystAgent.
 

@@ -16,6 +16,7 @@ from biocatalyst.agents.base import (
     BaseAgent,
     append_missing,
 )
+from biocatalyst.agents.prompts import MARKET_SYSTEM
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
 from biocatalyst.llm.base import BaseLLMProvider, LLMError, Message
@@ -23,19 +24,9 @@ from biocatalyst.llm.structured import complete_structured
 from biocatalyst.log import get_logger
 from biocatalyst.models.analysis import MarketContext
 from biocatalyst.models.raw_data import CompanyRawData, NewsItem, SectorSentiment
+from biocatalyst.models.report import ReportLanguage
 
 logger = get_logger(__name__)
-
-MARKET_SYSTEM = """Sei un analista di mercato specializzato nel settore biotech.
-
-Regola inderogabile: distingui sempre i FATTI VERIFICATI (ciò che risulta dai
-titoli di stampa e dai dati forniti) dalle SPECULAZIONI DI MERCATO (attese,
-voci, opinioni). Non presentare mai una speculazione come un fatto.
-
-Se non trovi indizi di interesse da parte di grandi aziende farmaceutiche,
-lascia vuoto l'elenco delle voci di acquisizione: non inventarle.
-
-Sii conservativo e rispondi in italiano."""
 
 
 class MarketNewsAgent(BaseAgent):
@@ -46,12 +37,14 @@ class MarketNewsAgent(BaseAgent):
         self,
         provider: BaseLLMProvider,
         providers: DataProviders,
+        language: ReportLanguage = "it",
         max_tokens: int = 8_000,
         news_days: int = 30,
         sentiment_days: int = 30,
     ) -> None:
         self.provider = provider
         self.providers = providers
+        self.language = language
         self.max_tokens = max_tokens
         self.news_days = news_days
         self.sentiment_days = sentiment_days
@@ -104,7 +97,7 @@ class MarketNewsAgent(BaseAgent):
         try:
             summary = complete_structured(
                 self.provider,
-                MARKET_SYSTEM,
+                MARKET_SYSTEM[self.language],
                 [Message(role="user", content=prompt)],
                 MarketContext,
                 max_tokens=self.max_tokens,

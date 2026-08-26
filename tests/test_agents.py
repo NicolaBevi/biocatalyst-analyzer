@@ -283,19 +283,22 @@ def test_data_collector_salta_trial_e_fda_senza_ragione_sociale() -> None:
 # --- ClinicalFinancialAnalystAgent --------------------------------------------
 
 
-_CLINICA_JSON = (
-    '{"study_design_summary":"disegno","primary_endpoint_evaluation":"endpoint",'
+#: Valutazione clinica e TAM arrivano in un'unica risposta: sono una sola
+#: chiamata all'LLM, per non pagare due volte lo stesso prompt di contesto.
+_ANALISI_JSON = (
+    '{"clinical":{"study_design_summary":"disegno",'
+    '"primary_endpoint_evaluation":"endpoint",'
     '"population_and_comparator_evaluation":"popolazione",'
-    '"statistical_power_evaluation":"potenza","historical_precedent_comparison":"precedenti"}'
-)
-_TAM_JSON = (
-    '{"indication":"Dolore","prevalence_estimate":"50M","pricing_comparable":"$100/mese",'
-    '"tam_low_usd":1000000,"tam_high_usd":5000000,"methodology_notes":"note"}'
+    '"statistical_power_evaluation":"potenza",'
+    '"historical_precedent_comparison":"precedenti"},'
+    '"tam":{"indication":"Dolore","prevalence_estimate":"50M",'
+    '"pricing_comparable":"$100/mese","tam_low_usd":1000000,'
+    '"tam_high_usd":5000000,"methodology_notes":"note"}}'
 )
 
 
 def test_analista_calcola_le_metriche_in_codice() -> None:
-    provider = ScriptedProvider([_CLINICA_JSON, _TAM_JSON])
+    provider = ScriptedProvider([_ANALISI_JSON])
     context = ClinicalFinancialAnalystAgent(provider).run({KEY_RAW_DATA: _raw_data()})
 
     bundle: AnalysisBundle = context[KEY_ANALYSIS]
@@ -307,8 +310,15 @@ def test_analista_calcola_le_metriche_in_codice() -> None:
     assert bundle.tam is not None
 
 
+def test_analista_fa_una_sola_chiamata_llm() -> None:
+    """Valutazione clinica e TAM condividono lo stesso contesto: una chiamata sola."""
+    provider = ScriptedProvider([_ANALISI_JSON])
+    ClinicalFinancialAnalystAgent(provider).run({KEY_RAW_DATA: _raw_data()})
+    assert len(provider.calls) == 1
+
+
 def test_analista_ordina_i_catalizzatori() -> None:
-    provider = ScriptedProvider([_CLINICA_JSON, _TAM_JSON])
+    provider = ScriptedProvider([_ANALISI_JSON])
     context = ClinicalFinancialAnalystAgent(provider).run({KEY_RAW_DATA: _raw_data()})
 
     catalysts = context[KEY_ANALYSIS].catalysts
@@ -327,7 +337,7 @@ def test_analista_sopravvive_al_fallimento_dell_llm() -> None:
     assert bundle.metrics.quarterly_burn_rate_usd is not None
     assert bundle.clinical_assessment is None
     assert bundle.tam is None
-    assert any("valutazione clinica non prodotta" in n for n in bundle.notes)
+    assert any("non prodotte" in n for n in bundle.notes)
 
 
 def test_analista_senza_trial_non_chiama_l_llm() -> None:
@@ -446,6 +456,7 @@ def test_writer_calcola_expected_value_e_variazioni_in_python() -> None:
     report = context[KEY_REPORT]
     # 0,1*0,75 + 0,4*0,35 + 0,5*0,15 = 0,29 contro un prezzo di 0,403
     assert report.expected_value.rows[0].expected_roi_pct == pytest.approx(-28.04, abs=0.01)
+    assert report.expected_value.rows[0].investment_usd == 1000.0
     assert report.scenarios.bull.target_price_change_pct == pytest.approx(86.10, abs=0.01)
     assert report.expected_value.eur_usd_rate == 1.1662
     assert report.expected_value.rate_date == date(2026, 8, 25)

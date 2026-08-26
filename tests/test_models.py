@@ -158,6 +158,7 @@ def _full_report() -> Report:
         ticker="ENSC",
         company_name="Example Biotech Corp",
         report_date=date(2026, 8, 25),
+        generated_at=datetime(2026, 8, 25, 14, 30, tzinfo=UTC),
         current_price=5.10,
         rating="BUY",
         average_analyst_target=9.0,
@@ -200,15 +201,9 @@ def _full_report() -> Report:
             rate_date=date(2026, 8, 24),
             rows=[
                 ExpectedValueRow(
-                    investment_eur=500,
-                    shares_purchasable=114.2,
-                    expected_value_eur=612.30,
-                    expected_roi_pct=22.5,
-                ),
-                ExpectedValueRow(
-                    investment_eur=1000,
-                    shares_purchasable=228.4,
-                    expected_value_eur=1224.60,
+                    investment_usd=1000,
+                    shares_purchasable=196.1,
+                    expected_value_usd=1225.0,
                     expected_roi_pct=22.5,
                 ),
             ],

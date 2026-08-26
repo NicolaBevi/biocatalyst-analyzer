@@ -12,7 +12,7 @@ un'istruzione nel prompt, ma resa strutturalmente impossibile da violare.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
@@ -26,10 +26,12 @@ from biocatalyst.agents.base import (
     AgentError,
     BaseAgent,
 )
+from biocatalyst.agents.prompts import WRITER_SYSTEM
 from biocatalyst.analysis import (
     ScenarioInput,
     build_expected_value_analysis,
     build_scenario_analysis,
+    collect_data_warnings,
 )
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
@@ -42,25 +44,13 @@ from biocatalyst.models.report import (
     AcquisitionAssessment,
     Rating,
     Report,
+    ReportLanguage,
     ReportSections,
     SourceEntry,
     SourceQuality,
 )
 
 logger = get_logger(__name__)
-
-WRITER_SYSTEM = """Sei un analista finanziario senior specializzato in
-biotecnologie. Scrivi un report di due diligence in italiano.
-
-Regole inderogabili:
-- Stime sempre conservative e realistiche, mai ottimistiche.
-- Cita la fonte di ogni dato numerico che riporti nel testo.
-- I dati non reperiti vanno dichiarati apertamente, mai stimati in silenzio.
-- Le probabilità dei tre scenari devono sommare esattamente a 1.0.
-- I prezzi obiettivo sono in dollari, coerenti con il prezzo corrente fornito.
-
-Non calcolare percentuali di variazione né valori attesi: se ne occupa il
-sistema a valle. Limitati a probabilità, prezzi obiettivo e analisi testuale."""
 
 
 class ScenarioDraft(BaseModel):
@@ -105,10 +95,12 @@ class ReportWriterAgent(BaseAgent):
         self,
         provider: BaseLLMProvider,
         providers: DataProviders,
+        language: ReportLanguage = "it",
         max_tokens: int = 16_000,
     ) -> None:
         self.provider = provider
         self.providers = providers
+        self.language = language
         self.max_tokens = max_tokens
 
     def _run(self, context: dict[str, Any]) -> dict[str, Any]:
@@ -126,7 +118,7 @@ class ReportWriterAgent(BaseAgent):
 
         draft = complete_structured(
             self.provider,
-            WRITER_SYSTEM,
+            WRITER_SYSTEM[self.language],
             [Message(role="user", content=_build_prompt(raw, analysis, market_context, price))],
             ReportDraft,
             max_tokens=self.max_tokens,
@@ -146,26 +138,33 @@ class ReportWriterAgent(BaseAgent):
             ),
         )
 
+        # Il cambio non entra più nel calcolo (l'expected value è in dollari):
+        # resta un riferimento per il lettore in area euro, quindi la sua
+        # assenza non blocca più il report.
         rate = collect_safely(
-            "tasso EUR/USD (Frankfurter)", lambda: self.providers.forex.get_eur_usd(), missing
+            "cambio EUR/USD di riferimento (Frankfurter)",
+            lambda: self.providers.forex.get_eur_usd(),
+            missing,
         )
-        if rate is None:
-            raise AgentError(
-                "Impossibile redigere il report: il tasso EUR/USD è indispensabile per la "
-                "tabella dell'expected value richiesta dal formato."
-            )
-
         expected_value = build_expected_value_analysis(
             current_price_usd=price,
             scenarios=scenarios,
-            eur_usd_rate=rate.rate,
-            rate_date=rate.rate_date,
+            eur_usd_rate=rate.rate if rate else None,
+            rate_date=rate.rate_date if rate else None,
+        )
+
+        warnings = collect_data_warnings(
+            analyst_target=raw.market_data.analyst_target_mean if raw.market_data else None,
+            current_price=price,
+            short_interest_days_old=_giorni_di_ritardo(raw),
         )
 
         report = Report(
             ticker=raw.ticker,
             company_name=raw.company_name,
             report_date=date.today(),
+            generated_at=raw.retrieved_at,
+            language=self.language,
             current_price=price,
             rating=draft.rating,
             average_analyst_target=raw.market_data.analyst_target_mean if raw.market_data else None,
@@ -176,6 +175,7 @@ class ReportWriterAgent(BaseAgent):
                 operational_strategy=draft.operational_strategy,
             ),
             financial_metrics=analysis.metrics,
+            market_snapshot=raw.market_data,
             catalysts=analysis.catalysts,
             scenarios=scenarios,
             expected_value=expected_value,
@@ -188,11 +188,19 @@ class ReportWriterAgent(BaseAgent):
             source_quality=SourceQuality(
                 sources_consulted=_sources(raw),
                 missing_data=sorted(set(missing)),
+                warnings=warnings,
             ),
         )
 
         context[KEY_REPORT] = report
         return context
+
+
+def _giorni_di_ritardo(raw: CompanyRawData) -> int | None:
+    """Da quanti giorni è fermo il dato sullo short interest."""
+    if raw.market_data is None or raw.market_data.short_interest_date is None:
+        return None
+    return (datetime.now(UTC).date() - raw.market_data.short_interest_date).days
 
 
 def _tam_non_disponibile() -> TAMEstimate:
