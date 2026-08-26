@@ -67,6 +67,8 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "speculation": "Speculazioni di mercato",
         "sector_trend": "Andamento del settore",
         "estimated_date": "data stimata dallo sponsor",
+        "overdue": "IN RITARDO",
+        "event_driven": "endpoint a eventi",
         "glossary": "Come leggere questo report",
         "disclaimer_title": "Avvertenza",
     },
@@ -125,6 +127,8 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "speculation": "Market speculation",
         "sector_trend": "Sector performance",
         "estimated_date": "date estimated by the sponsor",
+        "overdue": "OVERDUE",
+        "event_driven": "event-driven endpoint",
         "glossary": "How to read this report",
         "disclaimer_title": "Disclaimer",
     },
@@ -181,7 +185,12 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
         "catalysts": (
             "Eventi attesi che possono muovere il prezzo, estratti dagli studi clinici "
             "registrati e ordinati per vicinanza temporale. Le date indicate come stimate sono "
-            "dichiarazioni dello sponsor e slittano di frequente."
+            "dichiarazioni dello sponsor e slittano di frequente. Uno studio marcato IN RITARDO "
+            "ha superato la data stimata pur risultando ancora attivo: la lettura non è "
+            "avvenuta ed è quindi potenzialmente imminente. Se lo studio ha un endpoint a "
+            "eventi (sopravvivenza), la sua durata dipende dal numero di eventi verificatisi e "
+            "non dal calendario: un ritardo può indicare eventi più lenti del previsto, ma "
+            "anche difficoltà operative."
         ),
         "tam": (
             "Stima del mercato potenziale del farmaco principale, prodotta dal modello "
@@ -235,7 +244,11 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
         "catalysts": (
             "Expected price-moving events, extracted from registered clinical trials and sorted "
             "by proximity in time. Dates marked as estimated are sponsor statements and slip "
-            "frequently."
+            "frequently. A trial marked OVERDUE has passed its estimated date while still being "
+            "listed as active: the readout has not happened and is therefore potentially "
+            "imminent. If the trial has an event-driven endpoint (survival), its duration "
+            "depends on how many events have occurred rather than on the calendar: a delay may "
+            "point to slower-than-expected events, but also to operational difficulties."
         ),
         "tam": (
             "Estimate of the lead drug's addressable market, produced by the language model "

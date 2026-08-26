@@ -513,3 +513,132 @@ def test_pipeline_ha_i_quattro_agenti_nell_ordine_giusto(monkeypatch: pytest.Mon
         "MarketNews",
         "ReportWriter",
     ]
+
+
+# --- Scelta dell'asset di riferimento ---------------------------------------------
+
+
+def test_l_asset_di_riferimento_e_quello_che_pesa_di_piu() -> None:
+    """Il caso SELLAS: una Fase 3 conta più di una Fase 1/2 che legge prima.
+
+    La prima versione sceglieva il catalizzatore con la data più vicina e
+    finiva per approfondire l'asset secondario, ignorando lo studio di Fase 3
+    che è la ragione principale della valutazione.
+    """
+    from datetime import date
+
+    from biocatalyst.agents.analyst import _lead_trial
+    from biocatalyst.analysis import catalysts_from_trials
+
+    fase3_in_ritardo = ClinicalTrial(
+        nct_id="NCT_FASE3",
+        brief_title="Studio di Fase 3 sull'asset principale",
+        phase=["PHASE3"],
+        overall_status="ACTIVE_NOT_RECRUITING",
+        primary_completion_date=date(2025, 12, 1),
+        primary_completion_date_type="ESTIMATED",
+        primary_outcome_measure="Overall Survival",
+    )
+    fase1_futura = ClinicalTrial(
+        nct_id="NCT_FASE1",
+        brief_title="Studio di Fase 1/2 sull'asset secondario",
+        phase=["PHASE1", "PHASE2"],
+        overall_status="RECRUITING",
+        primary_completion_date=date(2026, 12, 30),
+        primary_completion_date_type="ESTIMATED",
+    )
+    raw = _raw_data(clinical_trials=[fase1_futura, fase3_in_ritardo])
+    catalysts = catalysts_from_trials(raw.clinical_trials, today=date(2026, 8, 26))
+
+    scelto = _lead_trial(raw, catalysts)
+
+    assert scelto is not None
+    assert scelto.nct_id == "NCT_FASE3"
+
+
+def test_a_parita_di_fase_vince_il_catalizzatore_piu_vicino() -> None:
+    from datetime import date
+
+    from biocatalyst.agents.analyst import _lead_trial
+    from biocatalyst.analysis import catalysts_from_trials
+
+    def fase3(nct: str, completion: date) -> ClinicalTrial:
+        return ClinicalTrial(
+            nct_id=nct,
+            brief_title=f"Studio {nct}",
+            phase=["PHASE3"],
+            overall_status="RECRUITING",
+            primary_completion_date=completion,
+            primary_completion_date_type="ESTIMATED",
+        )
+
+    raw = _raw_data(
+        clinical_trials=[
+            fase3("NCT_LONTANO", date(2027, 6, 1)),
+            fase3("NCT_VICINO", date(2026, 10, 1)),
+        ]
+    )
+    catalysts = catalysts_from_trials(raw.clinical_trials, today=date(2026, 8, 26))
+
+    assert _lead_trial(raw, catalysts).nct_id == "NCT_VICINO"  # type: ignore[union-attr]
+
+
+def test_il_writer_riceve_l_intera_pipeline_non_solo_l_asset_scelto() -> None:
+    """La panoramica deve elencare ogni studio: il valore della società non
+    si spiega con un farmaco solo."""
+    from datetime import date
+
+    from biocatalyst.agents.report_writer import _build_prompt
+
+    raw = _raw_data(
+        clinical_trials=[
+            ClinicalTrial(
+                nct_id="NCT_UNO",
+                brief_title="Primo asset",
+                phase=["PHASE3"],
+                overall_status="ACTIVE_NOT_RECRUITING",
+                primary_completion_date=date(2025, 12, 1),
+                primary_completion_date_type="ESTIMATED",
+            ),
+            ClinicalTrial(
+                nct_id="NCT_DUE",
+                brief_title="Secondo asset",
+                phase=["PHASE1"],
+                overall_status="RECRUITING",
+                primary_completion_date=date(2026, 12, 30),
+                primary_completion_date_type="ESTIMATED",
+            ),
+        ]
+    )
+    prompt = _build_prompt(raw, _analysis_bundle(), None, 0.403)
+
+    assert "PIPELINE CLINICA REGISTRATA" in prompt
+    assert "NCT_UNO" in prompt
+    assert "NCT_DUE" in prompt
+    assert "cita TUTTI gli asset" in prompt
+
+
+def test_il_prompt_segnala_ritardo_ed_endpoint_a_eventi() -> None:
+    from datetime import date
+
+    from biocatalyst.agents.report_writer import _build_prompt
+    from biocatalyst.analysis import catalysts_from_trials
+
+    trial = ClinicalTrial(
+        nct_id="NCT_REGAL",
+        brief_title="Studio a eventi in ritardo",
+        phase=["PHASE3"],
+        overall_status="ACTIVE_NOT_RECRUITING",
+        primary_completion_date=date(2025, 12, 1),
+        primary_completion_date_type="ESTIMATED",
+        primary_outcome_measure="OS",
+    )
+    raw = _raw_data(clinical_trials=[trial])
+    bundle = _analysis_bundle()
+    bundle.catalysts = catalysts_from_trials([trial], today=date(2026, 8, 26))
+
+    prompt = _build_prompt(raw, bundle, None, 0.403)
+
+    assert "[IN RITARDO]" in prompt
+    assert "[ENDPOINT A EVENTI]" in prompt
+    assert "due letture possibili" in prompt

@@ -39,7 +39,7 @@ from biocatalyst.llm.base import BaseLLMProvider, Message
 from biocatalyst.llm.structured import complete_structured
 from biocatalyst.log import get_logger
 from biocatalyst.models.analysis import AnalysisBundle, MarketContext, TAMEstimate
-from biocatalyst.models.raw_data import CompanyRawData
+from biocatalyst.models.raw_data import ClinicalTrial, CompanyRawData
 from biocatalyst.models.report import (
     AcquisitionAssessment,
     Rating,
@@ -196,6 +196,18 @@ class ReportWriterAgent(BaseAgent):
         return context
 
 
+def _riga_pipeline(trial: ClinicalTrial) -> str:
+    """Una riga per studio nella panoramica della pipeline."""
+    tipo = trial.primary_completion_date_type
+    qualifica = f" ({tipo.lower()})" if tipo else ""
+    fasi = "/".join(trial.phase) or "fase n/d"
+    return (
+        f"- {trial.nct_id} | {fasi} | {trial.overall_status} | "
+        f"completamento {trial.primary_completion_date or 'n/d'}{qualifica}"
+        f" | {trial.brief_title[:90]}"
+    )
+
+
 def _giorni_di_ritardo(raw: CompanyRawData) -> int | None:
     """Da quanti giorni è fermo il dato sullo short interest."""
     if raw.market_data is None or raw.market_data.short_interest_date is None:
@@ -244,10 +256,28 @@ def _build_prompt(
         return "non disponibile" if value is None else f"{value:,.{decimals}f}{unit}"
 
     catalysts = "\n".join(
-        f"- #{c.imminence_rank} {c.expected_date} — {c.name} (fonte: {c.source}"
-        + (f", {c.expected_date_window}" if c.expected_date_window else "")
+        f"- #{c.imminence_rank} {c.expected_date}"
+        + (" [IN RITARDO]" if c.is_overdue else "")
+        + (" [ENDPOINT A EVENTI]" if c.is_event_driven else "")
+        + f" — {c.name} (fonte: {c.source}"
+        + (f"; {c.expected_date_window}" if c.expected_date_window else "")
         + ")"
-        for c in analysis.catalysts[:5]
+        for c in analysis.catalysts[:8]
+    )
+
+    # Tutta la pipeline registrata, non solo gli studi con un catalizzatore
+    # atteso: la panoramica deve elencare ogni asset, altrimenti il report
+    # sembra riguardare una società con un solo farmaco.
+    pipeline = "\n".join(
+        _riga_pipeline(t)
+        for t in sorted(
+            raw.clinical_trials,
+            key=lambda t: (
+                t.primary_completion_date is None,
+                t.primary_completion_date or date.min,
+            ),
+            reverse=True,
+        )[:12]
     )
 
     clinical = ""
@@ -315,11 +345,23 @@ Dilution risk score: {num(m.dilution_risk_score, "/100")}
 ATM offering nei filing: {atm_text}
 Warrant nei filing: {warrant_text}
 
-CATALIZZATORI ATTESI
+PIPELINE CLINICA REGISTRATA (tutti gli studi noti)
+{pipeline or "- nessuno studio registrato su ClinicalTrials.gov"}
+
+CATALIZZATORI ATTESI (studi da cui si aspetta ancora una lettura)
 {catalysts or "- nessun catalizzatore futuro identificato dai trial registrati"}
 {clinical}{tam_text}{market_text}
 DATI NON REPERITI
 {chr(10).join(f"- {d}" for d in raw.missing_data) or "- nessuno"}
 
-Produci il report. Ricorda: probabilità che sommano a 1.0, prezzi obiettivo in
-dollari coerenti con il prezzo corrente, nessun calcolo di percentuali o valori attesi."""
+Produci il report.
+
+Nella panoramica della pipeline cita TUTTI gli asset rilevanti elencati sopra,
+non solo quello approfondito: chi legge deve capire cosa compone il valore
+della società. Se uno studio è marcato IN RITARDO spiegane il significato, e se
+è anche a ENDPOINT A EVENTI valuta esplicitamente le due letture possibili
+(eventi più lenti del previsto, oppure problemi operativi o di arruolamento)
+senza sceglierne una come certa.
+
+Ricorda: probabilità che sommano a 1.0, prezzi obiettivo in dollari coerenti
+con il prezzo corrente, nessun calcolo di percentuali o valori attesi."""

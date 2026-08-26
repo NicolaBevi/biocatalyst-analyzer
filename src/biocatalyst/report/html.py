@@ -83,8 +83,11 @@ TEMPLATE = """
 <ul>
 {% for c in r.catalysts %}
   <li><strong>{{ c.expected_date or c.expected_date_window }}</strong>
-      {% if c.expected_date_window %}({{ lb('estimated_date') }}){% endif %}
-      — {{ c.name }}<br><small>{{ c.source }}</small></li>
+      {% if c.is_overdue %}<strong style="color:#c0392b">⚠️ {{ lb('overdue') }}</strong>{% endif %}
+      {% if c.is_event_driven %}<em>({{ lb('event_driven') }})</em>{% endif %}
+      — {{ c.name }}
+      {% if c.expected_date_window %}<br><small><em>{{ c.expected_date_window }}</em></small>
+      {% endif %}<br><small>{{ c.source }}</small></li>
 {% endfor %}
 </ul>
 <div class="nota">{{ ex('catalysts') }}</div>

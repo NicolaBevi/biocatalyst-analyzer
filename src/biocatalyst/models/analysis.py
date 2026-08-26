@@ -43,6 +43,22 @@ class Catalyst(BaseModel):
     # Usato per ordinare i catalizzatori per imminenza: 1 = il più vicino.
     imminence_rank: int = Field(ge=1)
 
+    #: Vero se la data stimata è già passata ma lo studio risulta ancora
+    #: attivo: la lettura non è avvenuta, è in ritardo. Trattarlo come
+    #: concluso farebbe sparire dall'analisi proprio l'asset più atteso.
+    is_overdue: bool = False
+    overdue_days: int | None = Field(default=None, ge=0)
+
+    #: Vero se l'endpoint primario si misura contando eventi nel tempo
+    #: (sopravvivenza globale, sopravvivenza libera da progressione...).
+    #: In questi studi la durata non è fissata a calendario: un ritardo può
+    #: significare che gli eventi arrivano più lentamente del previsto.
+    is_event_driven: bool = False
+
+    #: Fase più avanzata dello studio (0-4), per stabilire quale asset pesa
+    #: davvero sul prezzo: una Fase 3 conta più di una Fase 1.
+    phase_materiality: int = Field(default=-1, ge=-1, le=4)
+
     @model_validator(mode="after")
     def _check_has_timing_info(self) -> Self:
         if self.expected_date is None and self.expected_date_window is None:

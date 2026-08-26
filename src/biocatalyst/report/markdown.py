@@ -112,8 +112,18 @@ def render_markdown(report: Report) -> str:
         parts.append(f"\n### {lb('catalysts_list')}\n")
         for c in report.catalysts:
             data = c.expected_date.isoformat() if c.expected_date else c.expected_date_window
-            finestra = f" ({lb('estimated_date')})" if c.expected_date_window else ""
-            parts.append(f"{c.imminence_rank}. **{data}**{finestra} — {c.name}  \n   _{c.source}_")
+            marcatori = []
+            if c.is_overdue:
+                marcatori.append(f"⚠️ **{lb('overdue')}**")
+            if c.is_event_driven:
+                marcatori.append(lb("event_driven"))
+            marca = f" — {' · '.join(marcatori)}" if marcatori else ""
+            parts.append(f"{c.imminence_rank}. **{data}**{marca} — {c.name}")
+            # La nota temporale spiega il ritardo e cosa può significare: va
+            # riportata per intero, non sostituita da un'etichetta generica.
+            if c.expected_date_window:
+                parts.append(f"   _{c.expected_date_window}_")
+            parts.append(f"   _{c.source}_")
         parts.append("")
         parts.append(_nota(ex("catalysts")))
 

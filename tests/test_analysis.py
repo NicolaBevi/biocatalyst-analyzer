@@ -29,6 +29,7 @@ from biocatalyst.analysis import (
     sorted_by_period,
     target_change_pct,
 )
+from biocatalyst.analysis.catalysts import is_event_driven
 from biocatalyst.models.raw_data import (
     ClinicalTrial,
     MarketData,
@@ -471,6 +472,7 @@ def _trial(
     completion: str | None = "2026-12-01",
     phase: list[str] | None = None,
     completion_type: str | None = "ESTIMATED",
+    endpoint: str | None = None,
 ) -> ClinicalTrial:
     return ClinicalTrial(
         nct_id=nct,
@@ -479,6 +481,7 @@ def _trial(
         overall_status=status,
         primary_completion_date=date.fromisoformat(completion) if completion else None,
         primary_completion_date_type=completion_type,  # type: ignore[arg-type]
+        primary_outcome_measure=endpoint,
     )
 
 
@@ -506,9 +509,91 @@ def test_catalizzatori_escludono_gli_studi_conclusi() -> None:
     assert "NCT003" in catalysts[0].source
 
 
-def test_catalizzatori_escludono_le_date_passate() -> None:
-    trials = [_trial("NCT001", completion="2020-01-01")]
+def test_uno_studio_attivo_in_ritardo_resta_un_catalizzatore() -> None:
+    """Il caso SELLAS: data stimata passata ma studio ancora attivo.
+
+    Scartarlo faceva sparire dall'analisi lo studio di Fase 3 che è la
+    ragione principale della valutazione del titolo.
+    """
+    trials = [_trial("NCT001", completion="2025-12-01", completion_type="ESTIMATED")]
+
+    catalysts = catalysts_from_trials(trials, today=date(2026, 8, 26))
+
+    assert len(catalysts) == 1
+    assert catalysts[0].is_overdue is True
+    assert catalysts[0].overdue_days == 268
+    assert "superata da 268 giorni" in (catalysts[0].expected_date_window or "")
+
+
+def test_una_data_effettiva_passata_significa_completamento_avvenuto() -> None:
+    """ACTUAL nel passato = è successo davvero, non è un ritardo."""
+    trials = [_trial("NCT001", completion="2025-12-01", completion_type="ACTUAL")]
     assert catalysts_from_trials(trials, today=date(2026, 8, 26)) == []
+
+
+def test_gli_studi_in_ritardo_precedono_quelli_futuri() -> None:
+    """Una lettura scaduta può arrivare in qualunque momento: è la più imminente."""
+    trials = [
+        _trial("NCT_FUTURO", completion="2026-10-01"),
+        _trial("NCT_RITARDO", completion="2025-12-01"),
+    ]
+
+    catalysts = catalysts_from_trials(trials, today=date(2026, 8, 26))
+
+    assert [c.source.split()[-1] for c in catalysts] == ["NCT_RITARDO", "NCT_FUTURO"]
+    assert catalysts[0].imminence_rank == 1
+
+
+def test_uno_studio_in_ritardo_ignora_la_finestra_temporale() -> None:
+    """È già scaduto: escluderlo per 'troppo lontano' non avrebbe senso."""
+    trials = [_trial("NCT001", completion="2024-01-01")]
+
+    catalysts = catalysts_from_trials(trials, today=date(2026, 8, 26), window_months=3)
+
+    assert len(catalysts) == 1
+    assert catalysts[0].is_overdue is True
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "atteso"),
+    [
+        ("OS", True),
+        ("Overall Survival", True),
+        ("Progression-Free Survival (PFS)", True),
+        ("PFS", True),
+        ("Event-free survival", True),
+        ("Duration of Response", True),
+        ("Number of participants with adverse events", False),
+        ("Tmax", False),
+        ("Maximum tolerated dose", False),  # "dose" contiene "os" ma non è un match
+        ("Objective response rate", False),
+        (None, False),
+        ("", False),
+    ],
+)
+def test_riconoscimento_degli_endpoint_a_eventi(endpoint: str | None, atteso: bool) -> None:
+    assert is_event_driven(_trial("NCT1", endpoint=endpoint)) is atteso
+
+
+def test_un_ritardo_su_endpoint_a_eventi_viene_spiegato() -> None:
+    """Negli studi a eventi il ritardo è un'informazione, non solo un contrattempo."""
+    trials = [_trial("NCT1", completion="2025-12-01", endpoint="Overall Survival (OS)")]
+
+    catalysts = catalysts_from_trials(trials, today=date(2026, 8, 26))
+
+    nota = catalysts[0].expected_date_window or ""
+    assert catalysts[0].is_event_driven is True
+    assert "eventi si accumulano più lentamente" in nota
+
+
+def test_la_materialita_riflette_la_fase() -> None:
+    catalysts = catalysts_from_trials(
+        [_trial("NCT1", phase=["PHASE3"]), _trial("NCT2", phase=["PHASE1"])],
+        today=date(2026, 8, 26),
+    )
+    per_nct = {c.source.split()[-1]: c for c in catalysts}
+    assert per_nct["NCT1"].phase_materiality == 3
+    assert per_nct["NCT2"].phase_materiality == 1
 
 
 def test_catalizzatori_escludono_i_trial_senza_data() -> None:

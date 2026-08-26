@@ -16,6 +16,7 @@ from typing import Any, ClassVar
 from biocatalyst.agents.base import KEY_ANALYSIS, KEY_RAW_DATA, BaseAgent, append_missing
 from biocatalyst.agents.prompts import ANALYST_SYSTEM
 from biocatalyst.analysis import catalysts_from_trials, compute_financial_metrics
+from biocatalyst.analysis.catalysts import is_event_driven, materiality, overdue_days
 from biocatalyst.llm.base import BaseLLMProvider, LLMError, Message
 from biocatalyst.llm.structured import complete_structured
 from biocatalyst.log import get_logger
@@ -103,7 +104,8 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             f"({trial.enrollment_type or 'tipo non indicato'})\n"
             f"- Endpoint primario: {trial.primary_outcome_measure or 'non disponibile'}\n"
             f"- Completamento atteso: {trial.primary_completion_date or 'non disponibile'}\n"
-            f"- Patologia: {', '.join(trial.condition) or 'non specificata'}\n\n"
+            f"- Patologia: {', '.join(trial.condition) or 'non specificata'}\n"
+            f"{_nota_ritardo(trial)}\n"
             "Valuta criticamente lo studio e stima il mercato potenziale del farmaco."
         )
         try:
@@ -120,23 +122,50 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             return None
 
 
-def _lead_trial(raw: CompanyRawData, catalysts: Sequence[Catalyst]) -> ClinicalTrial | None:
-    """Studio su cui concentrare l'analisi: quello col catalizzatore più vicino.
+def _nota_ritardo(trial: ClinicalTrial) -> str:
+    """Segnala all'analista che lo studio è in ritardo e cosa può significare."""
+    giorni = overdue_days(trial)
+    if giorni <= 0:
+        return ""
+    testo = (
+        f"- ATTENZIONE: la data stimata di completamento è superata da {giorni} giorni "
+        f"e lo studio risulta ancora attivo: la lettura dei dati è attesa, non avvenuta.\n"
+    )
+    if is_event_driven(trial):
+        testo += (
+            "- L'endpoint primario è a eventi: la durata dipende dal numero di eventi "
+            "verificatisi, non dal calendario. Valuta entrambe le letture possibili di un "
+            "ritardo (eventi più lenti del previsto, oppure difficoltà operative) senza "
+            "presentarne una come certa.\n"
+        )
+    return testo
 
-    Se nessuno studio ha un catalizzatore futuro si ripiega sullo studio in
-    fase più avanzata, perché è comunque l'asset più rilevante da descrivere.
+
+def _lead_trial(raw: CompanyRawData, catalysts: Sequence[Catalyst]) -> ClinicalTrial | None:
+    """Studio su cui concentrare l'analisi approfondita.
+
+    Non semplicemente quello con la data più vicina: **quello che pesa di più
+    sul prezzo**. Una Fase 3 con lettura fra sei mesi muove il titolo più di
+    una Fase 1 che legge domani, e su SELLAS la prima versione di questa
+    funzione sceglieva la Fase 1/2 ignorando lo studio di Fase 3 che è la
+    ragione principale della valutazione.
+
+    A parità di fase vince il catalizzatore più imminente.
     """
     if catalysts:
-        first = catalysts[0]
-        nct_id = first.source.split()[-1]
-        for trial in raw.clinical_trials:
-            if trial.nct_id == nct_id:
-                return trial
+        per_nct = {c.source.split()[-1]: c for c in catalysts}
+        candidati = [t for t in raw.clinical_trials if t.nct_id in per_nct]
+        if candidati:
+            scelto = max(
+                candidati,
+                key=lambda t: (
+                    per_nct[t.nct_id].phase_materiality,
+                    -per_nct[t.nct_id].imminence_rank,
+                ),
+            )
+            return scelto
 
     if not raw.clinical_trials:
         return None
-    phase_rank = {"PHASE4": 4, "PHASE3": 3, "PHASE2": 2, "PHASE1": 1, "EARLY_PHASE1": 0}
-    return max(
-        raw.clinical_trials,
-        key=lambda t: max((phase_rank.get(p, -1) for p in t.phase), default=-1),
-    )
+    # Nessun catalizzatore atteso: si descrive comunque l'asset più avanzato.
+    return max(raw.clinical_trials, key=materiality)
