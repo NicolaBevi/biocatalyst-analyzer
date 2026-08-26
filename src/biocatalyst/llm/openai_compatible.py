@@ -42,6 +42,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     #: response_format={"type": "json_object"}.
     supports_json_mode: ClassVar[bool] = True
 
+    #: Verificato su DeepSeek: anche i modelli di ragionamento inviano i chunk
+    #: con continuità (intervallo massimo osservato fra chunk: 0,7s).
+    supports_streaming: ClassVar[bool] = True
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._client: openai.OpenAI | None = None
@@ -81,6 +85,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 sdk_messages.append({"role": "assistant", "content": message.content})
 
         try:
+            if self.stream:
+                return self._complete_streaming(sdk_messages, payload, max_tokens)
             # Annotazione esplicita: `**payload` è dict[str, Any] e senza di essa
             # il tipo di ritorno collasserebbe ad Any, disattivando i controlli.
             response: ChatCompletion = self.client.chat.completions.create(
@@ -133,6 +139,46 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 f"{self.name.value}: risposta senza testo (finish_reason={finish_reason})"
             )
         return content
+
+    def _complete_streaming(
+        self,
+        sdk_messages: list[ChatCompletionMessageParam],
+        payload: dict[str, Any],
+        max_tokens: int,
+    ) -> str:
+        """Accumula i chunk in una stringa unica.
+
+        Il risultato è identico alla chiamata non-streaming: lo streaming serve
+        solo a tenere viva la connessione, non a consegnare testo parziale al
+        chiamante.
+        """
+        pezzi: list[str] = []
+        finish_reason: str | None = None
+
+        for chunk in self.client.chat.completions.create(
+            model=self.model, messages=sdk_messages, stream=True, **payload
+        ):
+            if not chunk.choices:
+                continue
+            scelta = chunk.choices[0]
+            if scelta.delta and scelta.delta.content:
+                pezzi.append(scelta.delta.content)
+            if scelta.finish_reason:
+                finish_reason = scelta.finish_reason
+
+        testo = "".join(pezzi)
+        if not testo.strip():
+            if finish_reason == "length":
+                raise LLMBadRequestError(
+                    f"{self.name.value}: nessun testo prodotto, budget di token esaurito "
+                    f"(max_tokens={max_tokens}). Con un modello di ragionamento serve un "
+                    f"max_tokens più alto."
+                )
+            raise LLMEmptyResponseError(
+                f"{self.name.value}: risposta in streaming senza testo "
+                f"(finish_reason={finish_reason})"
+            )
+        return testo
 
 
 class OpenAIProvider(OpenAICompatibleProvider):

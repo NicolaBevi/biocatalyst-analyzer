@@ -97,6 +97,12 @@ class BaseLLMProvider(ABC):
     #: che rende molto più affidabile l'output strutturato.
     supports_json_mode: ClassVar[bool] = False
 
+    #: Se il provider sa rispondere in streaming. Serve a non far scadere le
+    #: risposte lunghe dietro i proxy che chiudono le connessioni inattive
+    #: (Streamlit Community Cloud taglia a ~60s): in streaming i byte
+    #: continuano ad arrivare e il timeout di lettura non scatta mai.
+    supports_streaming: ClassVar[bool] = False
+
     #: Parametri del backoff esponenziale. Sono attributi di classe (e non
     #: costanti inline) per poterli azzerare nei test senza attese reali.
     retry_initial_wait: ClassVar[float] = 1.0
@@ -109,11 +115,13 @@ class BaseLLMProvider(ABC):
         api_key: SecretStr | None = None,
         timeout: int = 60,
         max_retries: int = 3,
+        stream: bool = False,
     ) -> None:
         self.model = model or self.default_model
         self._api_key = api_key
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
+        self.stream = stream and self.supports_streaming
 
     def __repr__(self) -> str:
         # Nessuna API key nel repr: questo oggetto può finire in un log o in un traceback.

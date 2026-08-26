@@ -56,6 +56,7 @@ def build_provider(
         api_key=api_key,
         timeout=settings.llm_request_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        stream=settings.llm_use_streaming,
     )
 
 

@@ -38,7 +38,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 6** — Rendering report (Markdown/PDF/JSON/HTML), bilingue IT/EN
 - [x] **Fase 7** — CLI Typer (analyze/compare completi, screen rimandato alla Fase 8)
 - [x] **Fase 8** — Modalità screen (universo titoli, filtri, ranking)
-- [ ] Fase 9 — UI Streamlit
+- [x] **Fase 9** — UI Streamlit
 - [ ] Fase 10 — Test, CI, Docker, README completo
 
 ## Architettura
@@ -76,7 +76,7 @@ src/biocatalyst/
 │   └── __init__.py #   render_json(), save_report(path) per estensione
 ├── screening.py    # modalità screen a stadi — FATTO (Fase 8)
 ├── cli.py          # Typer: analyze, compare, screen, version — FATTO (Fasi 7-8)
-└── app.py          # UI Streamlit — solo stub
+└── app.py          # UI Streamlit — FATTO (Fase 9), testata con AppTest
 ```
 
 ## Decisioni tecniche prese (con motivazione)
@@ -132,13 +132,16 @@ src/biocatalyst/
 | **La cassa insufficiente si segnala, non si penalizza** (peso sceso dal 35% al 15%) | Correzione a una scelta iniziale sbagliata: **diluire non è fallire**. Un titolo a $0,40 che raccoglie capitale al 50% di sconto e poi pubblica dati positivi può comunque moltiplicarsi, e questi titoli sono scontati *perché* il mercato prezza già la diluizione — è lì che vivono le scommesse asimmetriche. Penalizzandoli si scartavano proprio le occasioni. Resta però una coda davvero fatale (cassa finita senza accesso al capitale = studio interrotto): per questo ogni candidata a rischio porta `financing_risk`, un avviso che distingue esplicitamente i due scenari |
 | **Tre profili di rischio** (`--risk speculativo\|bilanciato\|prudente`) | Lo screen deve mostrare l'opportunità col suo rischio, non decidere al posto di chi legge. Il profilo speculativo azzera del tutto il peso della cassa nell'ordinamento, il prudente lo porta al 40% |
 | **La banda "eccezionale" include invece di scartare** | I requisiti chiedono di ammettere un titolo appena sopra soglia motivandolo: `ScreenCandidate.exceptional` lo marca e la CLI lo dichiara |
+| **Streaming attivo per default** (`LLM_USE_STREAMING`) | Risolve il timeout di ~60s di Streamlit Cloud sulle risposte HTTP in uscita. **La nota precedente in questo file era sbagliata**: spostare la chiamata in un thread non accorcia la risposta HTTP, quindi il proxy la taglierebbe comunque. Lo streaming invece tiene i byte in movimento. Misurato su `deepseek-v4-pro`: primo chunk dopo 0,7s, intervallo massimo fra chunk 0,7s su 67s totali — nessuna attesa singola vicina ai 60s |
+| **La pipeline gira in un thread, la pagina legge uno stato condiviso** | Serve comunque, ma per un motivo diverso dal timeout: eseguire 200s di pipeline dentro il ciclo di rendering bloccherebbe l'interfaccia. Un `st.fragment(run_every=2)` ridisegna la sola barra di avanzamento, e un `st.rerun(scope="app")` a fine lavoro sostituisce la barra col report |
+| **UI testata con `streamlit.testing.v1.AppTest`** | È il framework ufficiale: permette di verificare metriche, avvisi ed errori mostrati in pagina senza un browser |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
 
 - **yfinance / short interest**: dato strutturalmente vecchio di 2–3,5 settimane per *tutte* le fonti (FINRA liquida e pubblica solo 2 volte al mese) — non è un bug, va comunicato nel report con la data di riferimento (`dateShortInterest`). Per i micro-cap i campi `floatShares`/`shortRatio`/`shortPercentOfFloat` sono spesso `None` — serve codice difensivo ovunque, mai `.info["x"]` diretto.
 - **yfinance ToS**: dichiara "solo uso personale" — rischio di policy basso ma da menzionare nel README/disclaimer finale.
-- **Tempi della pipeline con `pro`**: DataCollector ~1s (cache), analista ~45s, notizie ~14s, scrittore ~146s. Totale ~205s per report. Il singolo agente scrittore supera già il timeout di ~60s di Streamlit Cloud: in Fase 9 serve generazione asincrona con polling, non una chiamata sincrona.
+- **Tempi della pipeline con `pro`**: DataCollector ~1s (cache), analista ~45s, notizie ~14s, scrittore ~146s. Totale ~205s per report.
 - **Streamlit Community Cloud**: documentato un timeout non ufficiale ~60s sulle risposte HTTP outbound lunghe (caso reale con `api.anthropic.com`: 60s timeout su Streamlit Cloud vs 23s altrove). Una pipeline sequenziale di 4 agenti con modelli reasoning potrebbe superarlo cumulativamente — da affrontare esplicitamente in Fase 9 (es. generazione report asincrona con polling invece di chiamata sincrona nel path Streamlit). RAM limitata a ~1GB, sleep dopo 12h di inattività.
 - **Finviz**: confermato che non ha un'API ufficiale gratuita stabile. Risolto usando l'anagrafica SEC (vedi sotto), senza scraping.
 - **ClinicalTrials.gov API v2 non distingue "Phase 2b" da "Phase 2"** (valori possibili: `PHASE1`/`PHASE2`/`PHASE3`/`PHASE4`/`EARLY_PHASE1`/`NA`). `ScreenCriteria.min_pipeline_phase` è per ora una stringa semplice; il requisito originale "Phase 2b/3 o NDA/BLA submitted" andrà approssimato in Fase 8 con euristiche aggiuntive (enrollment, disegno dello studio), non con un solo valore di questo campo.

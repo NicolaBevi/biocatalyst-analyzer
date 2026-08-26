@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     http_request_timeout_seconds: int = 30
 
+    #: Streaming delle risposte LLM. Attivo per default perché è l'unico modo
+    #: di far passare le risposte lunghe dietro i proxy che chiudono le
+    #: connessioni inattive: Streamlit Community Cloud taglia a ~60s e
+    #: l'agente scrittore impiega più del doppio.
+    llm_use_streaming: bool = True
+
     #: Lingua di default dei report ("it" o "en"), sovrascrivibile per singola analisi.
     report_language: Literal["it", "en"] = "it"
 
