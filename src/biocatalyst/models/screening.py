@@ -36,14 +36,20 @@ class ScreenCandidate(BaseModel):
     market_cap_usd: float = Field(gt=0)
     main_drug: str
     indication: str
-    tam: TAMEstimate
+    #: Prodotto dall'LLM sui soli finalisti: può mancare se la chiamata fallisce.
+    tam: TAMEstimate | None = None
     catalyst: Catalyst
     float_shares: float | None = Field(default=None, ge=0)
     short_percent_of_float: float | None = Field(default=None, ge=0)
     days_to_cover: float | None = Field(default=None, ge=0)
     cash_runway_months: float | None = Field(default=None, ge=0)
-    rationale: str
-    key_risks: list[str]
+    #: Punteggio di attrattività 0-100, calcolato in codice deterministico.
+    attractiveness_score: float = Field(ge=0, le=100)
+    #: Vero se il titolo supera le soglie ordinarie ma rientra in quelle
+    #: "eccezionali": va incluso dichiarandone il motivo, non scartato.
+    exceptional: bool = False
+    rationale: str = ""
+    key_risks: list[str] = Field(default_factory=list)
 
 
 class ScreenResult(BaseModel):

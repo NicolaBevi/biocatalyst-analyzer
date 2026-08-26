@@ -21,14 +21,23 @@ from biocatalyst.agents import analyze as run_analysis
 from biocatalyst.config import LLMProviderName, Settings, get_settings
 from biocatalyst.data.base import DataProviderError
 from biocatalyst.data.factory import build_data_providers
+from biocatalyst.data.universe import DEFAULT_SIC_CODES, PHARMA_SIC_CODE
 from biocatalyst.llm.base import LLMError
 from biocatalyst.log import configure_logging
 from biocatalyst.models.report import Report
+from biocatalyst.models.screening import ScreenCriteria, ScreenResult
 from biocatalyst.report import (
     DEFAULT_FORMATS,
     DEFAULT_REPORTS_DIR,
     save_all_formats,
     save_report,
+)
+from biocatalyst.screening import (
+    DEFAULT_MAX_CANDIDATES,
+    DEFAULT_MAX_UNIVERSE,
+)
+from biocatalyst.screening import (
+    screen as run_screen,
 )
 
 app = typer.Typer(
@@ -288,24 +297,127 @@ def _tabella_confronto(reports: list[Report]) -> Table:
 @app.command()
 def screen(
     max_price: Annotated[
-        float, typer.Option("--max-price", help="Prezzo massimo per azione")
+        float, typer.Option("--max-price", help="Prezzo massimo per azione in dollari")
     ] = 10.0,
-    sector: Annotated[
-        str | None, typer.Option("--sector", help="Area terapeutica, es. oncology")
-    ] = None,
+    max_market_cap: Annotated[
+        float, typer.Option("--max-market-cap", help="Capitalizzazione massima in dollari")
+    ] = 500_000_000,
     catalyst_window: Annotated[
-        int, typer.Option("--catalyst-window", help="Finestra dei catalizzatori in giorni")
-    ] = 180,
+        int, typer.Option("--catalyst-window", help="Finestra dei catalizzatori in mesi")
+    ] = 6,
+    min_phase: Annotated[
+        str, typer.Option("--min-phase", help="Fase minima: PHASE1, PHASE2, PHASE3")
+    ] = "PHASE2",
+    limit: Annotated[
+        int, typer.Option("--limit", help="Quante candidate restituire")
+    ] = DEFAULT_MAX_CANDIDATES,
+    max_universe: Annotated[
+        int, typer.Option("--max-universe", help="Quanti titoli esaminare al massimo")
+    ] = DEFAULT_MAX_UNIVERSE,
+    include_pharma: Annotated[
+        bool,
+        typer.Option(
+            "--include-pharma",
+            help="Aggiunge il SIC 2834: oltre 1.500 società, molto più lento",
+        ),
+    ] = False,
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Salva il risultato come JSON")
+    ] = None,
+    language: Annotated[
+        str | None, typer.Option("--language", "-l", help="Lingua delle motivazioni: it o en")
+    ] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Log dettagliati")] = False,
 ) -> None:
-    """Ricerca di nuove opportunità secondo criteri (in sviluppo)."""
-    console.print(
-        "[yellow]La modalità screen non è ancora disponibile.[/yellow]\n\n"
-        "Richiede la costruzione di un universo di titoli biotech a partire dai "
-        "codici SIC 2836/8731 della SEC, ed è la fase successiva dello sviluppo.\n\n"
-        f"Criteri che sarebbero stati applicati: prezzo ≤ ${max_price:,.2f}, "
-        f"area terapeutica {sector or 'qualsiasi'}, catalizzatori entro {catalyst_window} giorni."
+    """Cerca nuove opportunità fra i biotech quotati secondo criteri.
+
+    L'universo si ricava dall'anagrafica SEC per codice SIC: non esiste uno
+    screener gratuito con API stabile. I filtri sono tutti su dati gratuiti e
+    il modello linguistico interviene una sola volta, sulle sole finaliste.
+    """
+    settings = _settings_for(None, language)
+    _configura_log(settings, verbose)
+
+    criteria = ScreenCriteria(
+        max_price_usd=max_price,
+        max_price_usd_exceptional=max_price * 1.5,
+        market_cap_max_usd=max_market_cap,
+        market_cap_max_usd_exceptional=max_market_cap * 4,
+        min_pipeline_phase=min_phase.upper(),
+        catalyst_window_months=catalyst_window,
     )
-    raise typer.Exit(code=2)
+    sic = (*DEFAULT_SIC_CODES, PHARMA_SIC_CODE) if include_pharma else DEFAULT_SIC_CODES
+
+    console.print(
+        f"\n[bold]Ricerca opportunità[/bold] — prezzo ≤ ${max_price:,.2f}, "
+        f"capitalizzazione ≤ ${max_market_cap:,.0f}, catalizzatori entro {catalyst_window} mesi"
+    )
+    with console.status("[dim]costruzione dell'universo…[/dim]") as stato:
+
+        def avanzamento(fase: str, fatto: int, totale: int) -> None:
+            if fase == "titoli":
+                stato.update(f"[dim]esame titoli {fatto}/{totale}…[/dim]")
+            elif fase == "motivazioni":
+                stato.update("[dim]analisi delle finaliste…[/dim]")
+
+        try:
+            risultato = run_screen(
+                criteria=criteria,
+                settings=settings,
+                sic_codes=sic,
+                max_candidates=limit,
+                max_universe=max_universe,
+                language=settings.report_language,
+                on_progress=avanzamento,
+            )
+        except (DataProviderError, LLMError) as exc:
+            error_console.print(f"\n[red]Ricerca non riuscita:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+    if not risultato.candidates:
+        console.print(
+            "\n[yellow]Nessun titolo soddisfa i criteri.[/yellow] "
+            "Prova ad allargare la finestra dei catalizzatori o le soglie di prezzo."
+        )
+        raise typer.Exit(code=0)
+
+    console.print()
+    console.print(_tabella_screen(risultato))
+    for candidata in risultato.candidates:
+        console.print(f"\n[bold]{candidata.ticker}[/bold] — {candidata.company_name}")
+        if candidata.exceptional:
+            console.print("  [yellow]oltre le soglie ordinarie, incluso come eccezione[/yellow]")
+        if candidata.rationale:
+            console.print(f"  {candidata.rationale}")
+        for rischio in candidata.key_risks:
+            console.print(f"  [dim]rischio:[/dim] {rischio}")
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(risultato.model_dump_json(indent=2, exclude_none=False), encoding="utf-8")
+        console.print(f"\n[bold]Salvato:[/bold] {output}")
+
+
+def _tabella_screen(risultato: ScreenResult) -> Table:
+    table = Table(title=f"{len(risultato.candidates)} candidate", header_style="bold")
+    table.add_column("Ticker")
+    table.add_column("Prezzo", justify="right")
+    table.add_column("Cap.", justify="right")
+    table.add_column("Catalizzatore")
+    table.add_column("Runway", justify="right")
+    table.add_column("Punteggio", justify="right")
+
+    for c in risultato.candidates:
+        data = c.catalyst.expected_date or c.catalyst.expected_date_window
+        table.add_row(
+            f"[bold]{c.ticker}[/bold]",
+            f"${c.price:,.2f}",
+            f"${c.market_cap_usd / 1_000_000:,.0f}M",
+            str(data),
+            f"{c.cash_runway_months:,.1f}m" if c.cash_runway_months is not None else "—",
+            f"{c.attractiveness_score:,.0f}",
+        )
+    return table
 
 
 if __name__ == "__main__":

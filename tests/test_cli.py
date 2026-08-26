@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -311,13 +312,116 @@ def test_compare_fallisce_se_nessun_ticker_riesce(monkeypatch: pytest.MonkeyPatc
 # --- screen e version --------------------------------------------------------------
 
 
-def test_screen_dichiara_di_non_essere_pronto() -> None:
+def _screen_result(candidate: list[Any]) -> Any:
+    from datetime import UTC, datetime
+
+    from biocatalyst.models.screening import ScreenCriteria, ScreenResult
+
+    return ScreenResult(
+        criteria=ScreenCriteria(),
+        candidates=candidate,
+        generated_at=datetime(2026, 8, 26, tzinfo=UTC),
+    )
+
+
+def _candidata(ticker: str = "AAA", punteggio: float = 80.0, eccezionale: bool = False) -> Any:
+    from biocatalyst.models.analysis import Catalyst
+    from biocatalyst.models.screening import ScreenCandidate
+
+    return ScreenCandidate(
+        ticker=ticker,
+        company_name=f"{ticker} Bio",
+        sector="Biotecnologie",
+        price=5.0,
+        market_cap_usd=100_000_000,
+        main_drug="Studio X",
+        indication="Oncologia",
+        catalyst=Catalyst(
+            name="Fase 3",
+            catalyst_type="clinical_readout",
+            expected_date=date(2026, 12, 1),
+            source="ClinicalTrials.gov NCT1",
+            imminence_rank=1,
+        ),
+        cash_runway_months=14.0,
+        attractiveness_score=punteggio,
+        exceptional=eccezionale,
+        rationale="Motivazione di prova.",
+        key_risks=["Rischio uno"],
+    )
+
+
+def test_screen_mostra_le_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "biocatalyst.cli.run_screen", lambda **kw: _screen_result([_candidata("AAA")])
+    )
+
     result = runner.invoke(app, ["screen", "--max-price", "5"])
 
-    assert result.exit_code == 2
-    assert "non è ancora disponibile" in result.output
-    # I criteri ricevuti vengono comunque mostrati, per conferma.
-    assert "5.00" in result.output
+    assert result.exit_code == 0
+    assert "AAA" in result.output
+    assert "Motivazione di prova" in result.output
+    assert "Rischio uno" in result.output
+
+
+def test_screen_passa_i_criteri_della_riga_di_comando(monkeypatch: pytest.MonkeyPatch) -> None:
+    ricevuti = {}
+    monkeypatch.setattr(
+        "biocatalyst.cli.run_screen",
+        lambda **kw: ricevuti.update(kw) or _screen_result([_candidata()]),
+    )
+
+    runner.invoke(app, ["screen", "--max-price", "7", "--catalyst-window", "3", "--limit", "4"])
+
+    criteri = ricevuti["criteria"]
+    assert criteri.max_price_usd == 7.0
+    assert criteri.catalyst_window_months == 3
+    assert ricevuti["max_candidates"] == 4
+
+
+def test_screen_segnala_le_candidate_eccezionali(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "biocatalyst.cli.run_screen",
+        lambda **kw: _screen_result([_candidata(eccezionale=True)]),
+    )
+
+    result = runner.invoke(app, ["screen"])
+
+    assert "eccezione" in result.output
+
+
+def test_screen_senza_risultati_suggerisce_come_allargare(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("biocatalyst.cli.run_screen", lambda **kw: _screen_result([]))
+
+    result = runner.invoke(app, ["screen"])
+
+    assert result.exit_code == 0
+    assert "Nessun titolo soddisfa i criteri" in result.output
+    assert "allargare" in result.output
+
+
+def test_screen_salva_il_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("biocatalyst.cli.run_screen", lambda **kw: _screen_result([_candidata()]))
+    destinazione = tmp_path / "screen.json"
+
+    result = runner.invoke(app, ["screen", "--output", str(destinazione)])
+
+    assert result.exit_code == 0
+    assert json.loads(destinazione.read_text())["candidates"][0]["ticker"] == "AAA"
+
+
+def test_screen_traduce_gli_errori(monkeypatch: pytest.MonkeyPatch) -> None:
+    def esplode(**kwargs: Any) -> Any:
+        raise DataUnavailableError("SEC non risponde")
+
+    monkeypatch.setattr("biocatalyst.cli.run_screen", esplode)
+
+    result = runner.invoke(app, ["screen"])
+
+    assert result.exit_code == 1
+    assert "SEC non risponde" in result.output
 
 
 def test_version() -> None:

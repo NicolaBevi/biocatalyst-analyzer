@@ -37,7 +37,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 5** — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
 - [x] **Fase 6** — Rendering report (Markdown/PDF/JSON/HTML), bilingue IT/EN
 - [x] **Fase 7** — CLI Typer (analyze/compare completi, screen rimandato alla Fase 8)
-- [ ] Fase 8 — Modalità screen (universo titoli, filtri, ranking)
+- [x] **Fase 8** — Modalità screen (universo titoli, filtri, ranking)
 - [ ] Fase 9 — UI Streamlit
 - [ ] Fase 10 — Test, CI, Docker, README completo
 
@@ -56,6 +56,7 @@ src/biocatalyst/
 │   ├── sec.py      #   ticker->CIK, XBRL companyfacts, full-text search
 │   ├── market.py   #   yfinance: quotazione/float/short + sentiment XBI-IBB
 │   ├── clinical_trials.py, fda.py, news.py, forex.py
+│   ├── universe.py #   universo biotech da codici SIC SEC
 │   └── factory.py  #   build_data_providers(settings) -> DataProviders
 ├── analysis/       # calcoli deterministici — FATTO (Fase 4), copertura 100%
 │   ├── financials.py     # burn rate, cash runway
@@ -63,7 +64,8 @@ src/biocatalyst/
 │   ├── expected_value.py # EV, ROI, variazioni target
 │   ├── catalysts.py      # estrazione e ordinamento per imminenza
 │   ├── metrics.py        # compute_financial_metrics() -> (metriche, note)
-│   └── validation.py     # controlli di plausibilità (target price)
+│   ├── validation.py     # controlli di plausibilità (target price)
+│   └── screening.py      # filtri e punteggio di attrattività
 ├── agents/         # i 4 agenti + pipeline — FATTO (Fase 5)
 │   ├── base.py     #   BaseAgent: run(context)->context, chiavi richieste
 │   ├── data_collector.py, analyst.py, market_news.py, report_writer.py
@@ -72,7 +74,8 @@ src/biocatalyst/
 │   ├── labels.py   #   etichette e spiegazioni IT/EN
 │   ├── markdown.py, html.py, pdf.py (WeasyPrint)
 │   └── __init__.py #   render_json(), save_report(path) per estensione
-├── cli.py          # Typer: analyze, compare, screen (stub), version — FATTO (Fase 7)
+├── screening.py    # modalità screen a stadi — FATTO (Fase 8)
+├── cli.py          # Typer: analyze, compare, screen, version — FATTO (Fasi 7-8)
 └── app.py          # UI Streamlit — solo stub
 ```
 
@@ -122,6 +125,12 @@ src/biocatalyst/
 | **Tutti i parametri della CLI validati prima di costruire i provider** | Bug trovato provando la CLI: `--formats docx` avviava l'analisi completa e falliva solo al salvataggio, dopo aver speso in chiamate LLM. Ora fallisce in 3 secondi |
 | **Log a WARNING per default nella CLI, `--verbose` per alzarli** | La CLI mostra già il proprio avanzamento: i log strutturati si mescolavano all'output rendendolo illeggibile |
 | **`compare` non si ferma al primo ticker fallito** | Confrontare cinque titoli e perdere tutto perché il terzo non risponde sarebbe inaccettabile: i falliti sono elencati a parte |
+| **Universo screen dall'anagrafica SEC per codice SIC**, non da Finviz | Finviz non pubblica un'API gratuita stabile e lo scraping sarebbe fragile. `browse-edgar?SIC=...&output=atom` elenca le società per settore; `company_tickers_exchange.json` dice quali hanno un ticker NASDAQ/NYSE. Verificato: SIC 2836+8731 danno 673 società, di cui **175 quotate** |
+| **SIC 2834 escluso dal default**, disponibile con `--include-pharma` | Da solo aggiunge oltre 1.500 società, in larga parte big pharma fuori dal profilo micro-cap cercato, moltiplicando per otto i tempi di scansione |
+| **Solo il CIK viene letto dal feed atom SEC** | Il feed ha un difetto noto: il nome finisce in un tag `<last-date>` mal etichettato e il titolo contiene un artefatto Perl (`ARRAY(0x...)`). Il CIK è affidabile, il nome arriva dalla mappatura dei ticker |
+| **Screen a stadi con l'LLM solo sulle finaliste** | Eseguire la pipeline completa su 175 società costerebbe centinaia di chiamate a pagamento per trovarne cinque. Universo, prezzo, catalizzatori e cassa filtrano con dati gratuiti; una sola chiamata LLM produce le motivazioni di **tutte** le finaliste insieme |
+| **Il punteggio di attrattività premia la copertura di cassa fino al catalizzatore** (peso 35%) | È l'intuizione centrale dello screen: una società che esaurisce la liquidità prima della lettura dei dati diluisce proprio mentre il titolo attende l'evento, e il rialzo atteso viene mangiato dall'aumento di capitale. Sui dati reali il modello ha rilevato da solo questo rischio su tutte e tre le prime candidate |
+| **La banda "eccezionale" include invece di scartare** | I requisiti chiedono di ammettere un titolo appena sopra soglia motivandolo: `ScreenCandidate.exceptional` lo marca e la CLI lo dichiara |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
@@ -130,7 +139,7 @@ src/biocatalyst/
 - **yfinance ToS**: dichiara "solo uso personale" — rischio di policy basso ma da menzionare nel README/disclaimer finale.
 - **Tempi della pipeline con `pro`**: DataCollector ~1s (cache), analista ~45s, notizie ~14s, scrittore ~146s. Totale ~205s per report. Il singolo agente scrittore supera già il timeout di ~60s di Streamlit Cloud: in Fase 9 serve generazione asincrona con polling, non una chiamata sincrona.
 - **Streamlit Community Cloud**: documentato un timeout non ufficiale ~60s sulle risposte HTTP outbound lunghe (caso reale con `api.anthropic.com`: 60s timeout su Streamlit Cloud vs 23s altrove). Una pipeline sequenziale di 4 agenti con modelli reasoning potrebbe superarlo cumulativamente — da affrontare esplicitamente in Fase 9 (es. generazione report asincrona con polling invece di chiamata sincrona nel path Streamlit). RAM limitata a ~1GB, sleep dopo 12h di inattività.
-- **Finviz** (menzionato nei requisiti originali per lo screener universo Fase 8) — non ancora verificato. Non ha un'API ufficiale gratuita stabile: da affrontare quando si arriva alla Fase 8.
+- **Finviz**: confermato che non ha un'API ufficiale gratuita stabile. Risolto usando l'anagrafica SEC (vedi sotto), senza scraping.
 - **ClinicalTrials.gov API v2 non distingue "Phase 2b" da "Phase 2"** (valori possibili: `PHASE1`/`PHASE2`/`PHASE3`/`PHASE4`/`EARLY_PHASE1`/`NA`). `ScreenCriteria.min_pipeline_phase` è per ora una stringa semplice; il requisito originale "Phase 2b/3 o NDA/BLA submitted" andrà approssimato in Fase 8 con euristiche aggiuntive (enrollment, disegno dello studio), non con un solo valore di questo campo.
 - **Nomi modello di default nei provider LLM** (`gpt-4.1`, `llama-3.3-70b-versatile`, `gemini-2.5-flash` in `llm/openai_compatible.py` e `gemini_provider.py`) sono plausibili ma non verificati con chiamate reali — l'utente inserirà i modelli corretti nel `.env` quando servirà (gli override per-agente in `.env.example` hanno comunque priorità sul default di classe).
 

@@ -248,6 +248,7 @@ def test_screen_result_con_candidate_multiple() -> None:
         indication="NSCLC",
         tam=_tam(),
         catalyst=_catalyst(),
+        attractiveness_score=72.5,
         rationale="Catalizzatore entro 3 mesi con cash runway sufficiente a coprirlo.",
         key_risks=["Fallimento endpoint primario", "Diluizione via ATM offering"],
     )
