@@ -36,7 +36,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 4** — Analysis engine (cash runway, burn rate, squeeze score, EV/ROI) — **copertura 100%**
 - [x] **Fase 5** — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
 - [x] **Fase 6** — Rendering report (Markdown/PDF/JSON/HTML), bilingue IT/EN
-- [ ] Fase 7 — CLI Typer (analyze/screen/compare)
+- [x] **Fase 7** — CLI Typer (analyze/compare completi, screen rimandato alla Fase 8)
 - [ ] Fase 8 — Modalità screen (universo titoli, filtri, ranking)
 - [ ] Fase 9 — UI Streamlit
 - [ ] Fase 10 — Test, CI, Docker, README completo
@@ -72,7 +72,7 @@ src/biocatalyst/
 │   ├── labels.py   #   etichette e spiegazioni IT/EN
 │   ├── markdown.py, html.py, pdf.py (WeasyPrint)
 │   └── __init__.py #   render_json(), save_report(path) per estensione
-├── cli.py          # entrypoint Typer — solo stub (comando `version`)
+├── cli.py          # Typer: analyze, compare, screen (stub), version — FATTO (Fase 7)
 └── app.py          # UI Streamlit — solo stub
 ```
 
@@ -117,12 +117,18 @@ src/biocatalyst/
 | **`generated_at` distinto da `report_date`** | Un report rigenerato da cache può avere dati più vecchi della data di redazione: il lettore deve poter vedere entrambe |
 | **Avvisi sulla qualità del dato in cima al report**, non in fondo | Se un dato è inaffidabile va saputo prima di leggerlo. Il controllo sul target analisti nasce da un caso reale: yfinance riporta $8,25 per ENSC contro un prezzo di $0,403 (20,5 volte), quasi certamente una copertura non aggiornata |
 | **`market_snapshot` dentro `Report`** | Capitalizzazione, flottante e short interest sono richiesti esplicitamente dal formato: lasciarli nei soli dati grezzi li rendeva irraggiungibili al rendering (bug trovato guardando il primo report generato) |
+| **`deepseek-v4-pro` anche per l'analista** (misurato, non ipotizzato) | Su uno stesso prompt pro consuma ~il doppio dei token di flash (1.960 contro 1.015) ma non estrapola oltre i dati: su uno studio in volontari sani flash deduceva un'indicazione terapeutica, pro rispondeva "non è possibile determinarla dai dati forniti". Per un progetto la cui regola è "mai stimare in silenzio", la differenza vale il costo. MarketNews resta su flash: riassumere titoli è estrazione, non ragionamento |
+| **Report salvati in `reports/<TICKER>/`** con nome `TICKER_DATA_lingua.est` | Il nome ripete ticker e data che la cartella già contiene, così il file resta identificabile se spostato o allegato; la data evita che due analisi dello stesso titolo in giorni diversi si sovrascrivano. `reports/` è in `.gitignore` |
+| **Tutti i parametri della CLI validati prima di costruire i provider** | Bug trovato provando la CLI: `--formats docx` avviava l'analisi completa e falliva solo al salvataggio, dopo aver speso in chiamate LLM. Ora fallisce in 3 secondi |
+| **Log a WARNING per default nella CLI, `--verbose` per alzarli** | La CLI mostra già il proprio avanzamento: i log strutturati si mescolavano all'output rendendolo illeggibile |
+| **`compare` non si ferma al primo ticker fallito** | Confrontare cinque titoli e perdere tutto perché il terzo non risponde sarebbe inaccettabile: i falliti sono elencati a parte |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
 
 - **yfinance / short interest**: dato strutturalmente vecchio di 2–3,5 settimane per *tutte* le fonti (FINRA liquida e pubblica solo 2 volte al mese) — non è un bug, va comunicato nel report con la data di riferimento (`dateShortInterest`). Per i micro-cap i campi `floatShares`/`shortRatio`/`shortPercentOfFloat` sono spesso `None` — serve codice difensivo ovunque, mai `.info["x"]` diretto.
 - **yfinance ToS**: dichiara "solo uso personale" — rischio di policy basso ma da menzionare nel README/disclaimer finale.
+- **Tempi della pipeline con `pro`**: DataCollector ~1s (cache), analista ~45s, notizie ~14s, scrittore ~146s. Totale ~205s per report. Il singolo agente scrittore supera già il timeout di ~60s di Streamlit Cloud: in Fase 9 serve generazione asincrona con polling, non una chiamata sincrona.
 - **Streamlit Community Cloud**: documentato un timeout non ufficiale ~60s sulle risposte HTTP outbound lunghe (caso reale con `api.anthropic.com`: 60s timeout su Streamlit Cloud vs 23s altrove). Una pipeline sequenziale di 4 agenti con modelli reasoning potrebbe superarlo cumulativamente — da affrontare esplicitamente in Fase 9 (es. generazione report asincrona con polling invece di chiamata sincrona nel path Streamlit). RAM limitata a ~1GB, sleep dopo 12h di inattività.
 - **Finviz** (menzionato nei requisiti originali per lo screener universo Fase 8) — non ancora verificato. Non ha un'API ufficiale gratuita stabile: da affrontare quando si arriva alla Fase 8.
 - **ClinicalTrials.gov API v2 non distingue "Phase 2b" da "Phase 2"** (valori possibili: `PHASE1`/`PHASE2`/`PHASE3`/`PHASE4`/`EARLY_PHASE1`/`NA`). `ScreenCriteria.min_pipeline_phase` è per ora una stringa semplice; il requisito originale "Phase 2b/3 o NDA/BLA submitted" andrà approssimato in Fase 8 con euristiche aggiuntive (enrollment, disegno dello studio), non con un solo valore di questo campo.

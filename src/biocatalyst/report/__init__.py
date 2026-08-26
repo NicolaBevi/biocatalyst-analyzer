@@ -16,6 +16,39 @@ def render_json(report: Report, indent: int = 2) -> str:
     return json.dumps(json.loads(report.model_dump_json()), ensure_ascii=False, indent=indent)
 
 
+#: Formati salvati per default da `save_all_formats`.
+DEFAULT_FORMATS: tuple[str, ...] = (".md", ".json", ".pdf")
+
+#: Cartella radice dei report generati.
+DEFAULT_REPORTS_DIR = Path("reports")
+
+
+def report_directory(report: Report, base_dir: Path = DEFAULT_REPORTS_DIR) -> Path:
+    """Cartella dedicata a un ticker: `reports/ENSC/`."""
+    return base_dir / report.ticker.upper()
+
+
+def report_filename(report: Report, extension: str) -> str:
+    """Nome file autodescrittivo: `ENSC_2026-08-26_it.pdf`.
+
+    Include ticker e data anche se la cartella li ripete, così il file resta
+    identificabile quando viene spostato o allegato a un'email. La data evita
+    che due analisi dello stesso titolo in giorni diversi si sovrascrivano.
+    """
+    suffix = extension if extension.startswith(".") else f".{extension}"
+    return f"{report.ticker.upper()}_{report.report_date.isoformat()}_{report.language}{suffix}"
+
+
+def save_all_formats(
+    report: Report,
+    base_dir: Path = DEFAULT_REPORTS_DIR,
+    formats: tuple[str, ...] = DEFAULT_FORMATS,
+) -> list[Path]:
+    """Salva il report in più formati dentro `reports/<TICKER>/`."""
+    directory = report_directory(report, base_dir)
+    return [save_report(report, directory / report_filename(report, ext)) for ext in formats]
+
+
 def save_report(report: Report, destination: Path) -> Path:
     """Salva il report nel formato dedotto dall'estensione del file.
 
@@ -43,10 +76,15 @@ def save_report(report: Report, destination: Path) -> Path:
 
 
 __all__ = [
+    "DEFAULT_FORMATS",
+    "DEFAULT_REPORTS_DIR",
     "PDFRenderingError",
     "render_html",
     "render_json",
     "render_markdown",
     "render_pdf",
+    "report_directory",
+    "report_filename",
+    "save_all_formats",
     "save_report",
 ]

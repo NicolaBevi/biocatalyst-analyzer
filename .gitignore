@@ -24,3 +24,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Report generati (contengono analisi, non vanno in repo)
+reports/
