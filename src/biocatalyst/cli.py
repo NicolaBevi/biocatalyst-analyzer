@@ -18,6 +18,7 @@ from rich.table import Table
 from biocatalyst import __version__
 from biocatalyst.agents import AgentError
 from biocatalyst.agents import analyze as run_analysis
+from biocatalyst.analysis.screening import RISK_APPETITES
 from biocatalyst.config import LLMProviderName, Settings, get_settings
 from biocatalyst.data.base import DataProviderError
 from biocatalyst.data.factory import build_data_providers
@@ -305,6 +306,16 @@ def screen(
     catalyst_window: Annotated[
         int, typer.Option("--catalyst-window", help="Finestra dei catalizzatori in mesi")
     ] = 6,
+    risk: Annotated[
+        str,
+        typer.Option(
+            "--risk",
+            help=(
+                "Profilo di rischio: speculativo (ignora la cassa nell'ordinamento), "
+                "bilanciato, prudente"
+            ),
+        ),
+    ] = "bilanciato",
     min_phase: Annotated[
         str, typer.Option("--min-phase", help="Fase minima: PHASE1, PHASE2, PHASE3")
     ] = "PHASE2",
@@ -335,6 +346,11 @@ def screen(
     screener gratuito con API stabile. I filtri sono tutti su dati gratuiti e
     il modello linguistico interviene una sola volta, sulle sole finaliste.
     """
+    appetite = RISK_APPETITES.get(risk.lower())
+    if appetite is None:
+        raise typer.BadParameter(
+            f"profilo di rischio sconosciuto '{risk}'. Validi: {', '.join(RISK_APPETITES)}"
+        )
     settings = _settings_for(None, language)
     _configura_log(settings, verbose)
 
@@ -350,7 +366,8 @@ def screen(
 
     console.print(
         f"\n[bold]Ricerca opportunità[/bold] — prezzo ≤ ${max_price:,.2f}, "
-        f"capitalizzazione ≤ ${max_market_cap:,.0f}, catalizzatori entro {catalyst_window} mesi"
+        f"capitalizzazione ≤ ${max_market_cap:,.0f}, catalizzatori entro {catalyst_window} mesi, "
+        f"profilo {appetite.name}"
     )
     with console.status("[dim]costruzione dell'universo…[/dim]") as stato:
 
@@ -368,6 +385,7 @@ def screen(
                 max_candidates=limit,
                 max_universe=max_universe,
                 language=settings.report_language,
+                appetite=appetite,
                 on_progress=avanzamento,
             )
         except (DataProviderError, LLMError) as exc:
@@ -387,6 +405,8 @@ def screen(
         console.print(f"\n[bold]{candidata.ticker}[/bold] — {candidata.company_name}")
         if candidata.exceptional:
             console.print("  [yellow]oltre le soglie ordinarie, incluso come eccezione[/yellow]")
+        if candidata.financing_risk:
+            console.print(f"  [yellow]⚠ {candidata.financing_risk}[/yellow]")
         if candidata.rationale:
             console.print(f"  {candidata.rationale}")
         for rischio in candidata.key_risks:
@@ -406,6 +426,7 @@ def _tabella_screen(risultato: ScreenResult) -> Table:
     table.add_column("Catalizzatore")
     table.add_column("Runway", justify="right")
     table.add_column("Punteggio", justify="right")
+    table.add_column("Cassa")
 
     for c in risultato.candidates:
         data = c.catalyst.expected_date or c.catalyst.expected_date_window
@@ -416,6 +437,7 @@ def _tabella_screen(risultato: ScreenResult) -> Table:
             str(data),
             f"{c.cash_runway_months:,.1f}m" if c.cash_runway_months is not None else "—",
             f"{c.attractiveness_score:,.0f}",
+            "[yellow]da rifinanziare[/yellow]" if c.financing_risk else "sufficiente",
         )
     return table
 

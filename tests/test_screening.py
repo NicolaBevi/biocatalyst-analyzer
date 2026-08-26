@@ -475,3 +475,101 @@ def test_screen_marca_le_candidate_eccezionali(monkeypatch: pytest.MonkeyPatch) 
     per_ticker = {c.ticker: c for c in risultato.candidates}
     assert per_ticker["AAA"].exceptional is True
     assert per_ticker["BBB"].exceptional is False
+
+
+# --- Profili di rischio: le gemme scontate non devono sparire ---------------------
+
+
+def test_il_profilo_speculativo_non_penalizza_la_cassa_scarsa() -> None:
+    """Diluire non è fallire: un titolo scontato deve restare visibile."""
+    from biocatalyst.analysis.screening import BALANCED, PRUDENT, SPECULATIVE
+
+    comune: dict[str, Any] = {
+        "catalyst": _catalizzatore(giorni=150),
+        "criteria": _criteri(),
+        "market_cap": 20_000_000,
+        "phases": ["PHASE3"],
+        "today": OGGI,
+    }
+    scarsa = 1.0
+    capiente = 24.0
+
+    # Nel profilo speculativo il punteggio non dipende dalla cassa.
+    assert attractiveness_score(
+        cash_runway_months=scarsa, appetite=SPECULATIVE, **comune
+    ) == pytest.approx(
+        attractiveness_score(cash_runway_months=capiente, appetite=SPECULATIVE, **comune)
+    )
+
+    # Nel prudente il divario è marcato, nel bilanciato contenuto.
+    divario_prudente = attractiveness_score(
+        cash_runway_months=capiente, appetite=PRUDENT, **comune
+    ) - attractiveness_score(cash_runway_months=scarsa, appetite=PRUDENT, **comune)
+    divario_bilanciato = attractiveness_score(
+        cash_runway_months=capiente, appetite=BALANCED, **comune
+    ) - attractiveness_score(cash_runway_months=scarsa, appetite=BALANCED, **comune)
+    assert divario_prudente > divario_bilanciato > 0
+
+
+def test_avviso_finanziario_quando_la_cassa_non_arriva_al_catalizzatore() -> None:
+    from biocatalyst.analysis.screening import financing_risk_note
+
+    avviso = financing_risk_note(2.0, _catalizzatore(giorni=180), OGGI)
+
+    assert avviso is not None
+    assert "2.0 mesi" in avviso
+    # Distingue i due rischi: diluizione e interruzione dello studio.
+    assert "diluir" in avviso
+    assert "interrotto" in avviso
+
+
+def test_nessun_avviso_se_la_cassa_basta() -> None:
+    from biocatalyst.analysis.screening import financing_risk_note
+
+    assert financing_risk_note(24.0, _catalizzatore(giorni=180), OGGI) is None
+
+
+def test_nessun_avviso_senza_dati_sufficienti() -> None:
+    from biocatalyst.analysis.screening import financing_risk_note
+
+    assert financing_risk_note(None, _catalizzatore(), OGGI) is None
+    catalizzatore_senza_data = Catalyst(
+        name="x",
+        catalyst_type="clinical_readout",
+        expected_date_window="Q1 2027",
+        source="s",
+        imminence_rank=1,
+    )
+    assert financing_risk_note(2.0, catalizzatore_senza_data, OGGI) is None
+
+
+def test_la_candidata_a_corto_di_cassa_resta_nel_risultato(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Il punto della correzione: segnalare il rischio, non escludere il titolo."""
+    mercato = {
+        "AAA": MarketData(price=0.4, market_cap_usd=8_000_000),
+        "BBB": MarketData(price=5.0, market_cap_usd=100_000_000),
+    }
+    trials = {"Alpha": [_trial("NCT1", giorni=150)], "Beta": [_trial("NCT2", giorni=150)]}
+
+    providers = _providers_finti(mercato, trials)
+    # Alpha ha pochissima cassa, Beta molta.
+    providers.sec.get_quarterly_financials.side_effect = lambda t: []
+    monkeypatch.setattr(
+        "biocatalyst.screening._runway", lambda ticker, p: 1.0 if ticker == "AAA" else 24.0
+    )
+    monkeypatch.setattr(
+        "biocatalyst.screening.UniverseProvider",
+        lambda **kw: MagicMock(get_universe=lambda sic: {"AAA": "Alpha Bio", "BBB": "Beta Bio"}),
+    )
+    monkeypatch.setattr("biocatalyst.screening._aggiungi_motivazioni", lambda *a, **k: None)
+    settings = MagicMock()
+    settings.report_language = "it"
+
+    risultato = screen(providers=providers, settings=settings)
+
+    per_ticker = {c.ticker: c for c in risultato.candidates}
+    assert "AAA" in per_ticker  # non scartata
+    assert per_ticker["AAA"].financing_risk is not None
+    assert per_ticker["BBB"].financing_risk is None

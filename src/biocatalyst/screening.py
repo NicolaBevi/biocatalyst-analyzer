@@ -28,7 +28,10 @@ from biocatalyst.analysis import (
     quarterly_burn_rate,
 )
 from biocatalyst.analysis.screening import (
+    BALANCED,
+    RiskAppetite,
     attractiveness_score,
+    financing_risk_note,
     meets_phase_requirement,
     passes_price_and_size,
 )
@@ -96,6 +99,7 @@ def screen(
     max_candidates: int = DEFAULT_MAX_CANDIDATES,
     max_universe: int = DEFAULT_MAX_UNIVERSE,
     language: ReportLanguage | None = None,
+    appetite: RiskAppetite = BALANCED,
     on_progress: ScreenProgress | None = None,
 ) -> ScreenResult:
     """Esegue la ricerca e restituisce le candidate ordinate per attrattività."""
@@ -121,7 +125,7 @@ def screen(
         tickers = sorted(universo)[:max_universe]
         logger.info("screen_universo", totale=len(universo), esaminati=len(tickers))
 
-        selezionate = _filtra(tickers, universo, criteria, providers, avanza)
+        selezionate = _filtra(tickers, universo, criteria, providers, avanza, appetite)
         selezionate.sort(key=lambda c: -c.attractiveness_score)
         finaliste = selezionate[:max_candidates]
 
@@ -145,6 +149,7 @@ def _filtra(
     criteria: ScreenCriteria,
     providers: DataProviders,
     avanza: Callable[[str, int, int], None],
+    appetite: RiskAppetite,
 ) -> list[ScreenCandidate]:
     candidate: list[ScreenCandidate] = []
     totale = len(tickers)
@@ -152,7 +157,7 @@ def _filtra(
     for indice, ticker in enumerate(tickers, start=1):
         avanza("titoli", indice, totale)
         try:
-            candidato = _valuta_titolo(ticker, universo[ticker], criteria, providers)
+            candidato = _valuta_titolo(ticker, universo[ticker], criteria, providers, appetite)
         except DataProviderError as exc:
             # Un titolo che non risponde non deve fermare la ricerca sugli altri.
             logger.debug("titolo_saltato", ticker=ticker, motivo=str(exc)[:120])
@@ -169,6 +174,7 @@ def _valuta_titolo(
     company_name: str,
     criteria: ScreenCriteria,
     providers: DataProviders,
+    appetite: RiskAppetite,
 ) -> ScreenCandidate | None:
     # Stadio 2: prezzo e capitalizzazione, il filtro più economico.
     market = providers.market.get_market_data(ticker)
@@ -198,6 +204,7 @@ def _valuta_titolo(
         market_cap=market.market_cap_usd,
         cash_runway_months=runway,
         phases=fasi,
+        appetite=appetite,
     )
 
     assert market.price is not None and market.market_cap_usd is not None  # noqa: S101
@@ -214,6 +221,7 @@ def _valuta_titolo(
         short_percent_of_float=market.short_percent_of_float,
         days_to_cover=market.short_ratio_days,
         cash_runway_months=runway,
+        financing_risk=financing_risk_note(runway, catalizzatore),
         attractiveness_score=punteggio,
         exceptional=esito.exceptional,
     )
@@ -251,16 +259,23 @@ def _aggiungi_motivazioni(
     for c in candidate:
         data = c.catalyst.expected_date or c.catalyst.expected_date_window
         runway = f"{c.cash_runway_months:.1f} mesi" if c.cash_runway_months else "non disponibile"
-        righe.append(
+        riga = (
             f"- {c.ticker} ({c.company_name}): prezzo ${c.price:,.2f}, "
             f"capitalizzazione ${c.market_cap_usd:,.0f}, autonomia di cassa {runway}, "
             f"studio '{c.main_drug}' su {c.indication}, catalizzatore atteso {data}"
         )
+        if c.financing_risk:
+            riga += f"\n  ATTENZIONE FINANZIARIA: {c.financing_risk}"
+        righe.append(riga)
 
     prompt = (
         "Società selezionate dallo screening:\n"
         + "\n".join(righe)
-        + "\n\nPer ciascuna indica il ticker, una motivazione sintetica e i rischi chiave."
+        + "\n\nPer ciascuna indica il ticker, una motivazione sintetica e i rischi chiave.\n"
+        "Dove compare un'attenzione finanziaria, valuta il compromesso in modo esplicito: "
+        "la diluizione riduce il rialzo potenziale ma non lo annulla, mentre l'esaurimento "
+        "della cassa senza accesso al capitale può interrompere lo studio. Sono due rischi "
+        "diversi e vanno distinti."
     )
 
     try:

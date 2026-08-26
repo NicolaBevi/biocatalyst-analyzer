@@ -45,6 +45,11 @@ class ScreenCandidate(BaseModel):
     cash_runway_months: float | None = Field(default=None, ge=0)
     #: Punteggio di attrattività 0-100, calcolato in codice deterministico.
     attractiveness_score: float = Field(ge=0, le=100)
+    #: Avviso quando la cassa non arriva al catalizzatore. Il titolo resta
+    #: fra le candidate — potrebbe essere l'occasione scontata — ma il rischio
+    #: di diluizione (e nella coda peggiore di interruzione dello studio) va
+    #: dichiarato, non nascosto nel punteggio.
+    financing_risk: str | None = None
     #: Vero se il titolo supera le soglie ordinarie ma rientra in quelle
     #: "eccezionali": va incluso dichiarandone il motivo, non scartato.
     exceptional: bool = False

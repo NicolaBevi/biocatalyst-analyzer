@@ -4,10 +4,20 @@ Tutto deterministico: quali titoli superino i criteri e in che ordine è una
 questione di soglie e date, non di giudizio. All'LLM resta solo la motivazione
 testuale sui pochi finalisti.
 
-L'intuizione che guida il punteggio: **la cassa deve bastare fino al
-catalizzatore**. Una società che esaurisce la liquidità prima della lettura
-dei dati diluisce gli azionisti proprio mentre il titolo attende l'evento, e
-il rialzo atteso viene mangiato dall'aumento di capitale.
+Sulla cassa insufficiente, una distinzione che conta:
+
+- **diluire non è fallire.** Un titolo a $0,40 che raccoglie capitale al 50%
+  di sconto e poi pubblica dati positivi può comunque moltiplicarsi: la
+  diluizione erode l'upside, non lo annulla. Anzi, questi titoli sono scontati
+  *perché* il mercato prezza già la diluizione, ed è lì che vivono le
+  scommesse asimmetriche;
+- **esiste però una coda davvero fatale**: cassa finita senza possibilità di
+  raccogliere significa studio interrotto, non solo azionisti diluiti.
+
+Per questo la copertura di cassa pesa poco nell'ordinamento (15%) e viene
+invece **segnalata esplicitamente** su ogni candidata a rischio: lo screen
+deve mostrare l'opportunità insieme al suo rischio, non nasconderla. Chi
+vuole un profilo diverso lo sceglie con `RiskAppetite`.
 """
 
 from __future__ import annotations
@@ -27,10 +37,34 @@ PHASE_ORDER: dict[str, int] = {
     "PHASE4": 4,
 }
 
-WEIGHT_IMMINENCE = 0.35
-WEIGHT_RUNWAY_COVERAGE = 0.35
-WEIGHT_SIZE = 0.20
-WEIGHT_PHASE = 0.10
+
+@dataclass(frozen=True)
+class RiskAppetite:
+    """Quanto pesa la solidità di cassa nell'ordinamento delle candidate."""
+
+    name: str
+    imminence: float
+    runway_coverage: float
+    size: float
+    phase: float
+
+
+#: Ignora la cassa nell'ordinamento: mostra anche le società che dovranno
+#: diluire, perché la diluizione riduce l'upside ma non lo azzera. Il rischio
+#: resta segnalato su ogni candidata.
+SPECULATIVE = RiskAppetite(
+    "speculativo", imminence=0.45, runway_coverage=0.0, size=0.40, phase=0.15
+)
+
+#: Default: la cassa conta, ma non abbastanza da escludere una società
+#: piccola con un catalizzatore vicino.
+BALANCED = RiskAppetite("bilanciato", imminence=0.40, runway_coverage=0.15, size=0.30, phase=0.15)
+
+#: Privilegia chi ha liquidità sufficiente ad arrivare al catalizzatore
+#: senza raccogliere capitale.
+PRUDENT = RiskAppetite("prudente", imminence=0.30, runway_coverage=0.40, size=0.20, phase=0.10)
+
+RISK_APPETITES: dict[str, RiskAppetite] = {a.name: a for a in (SPECULATIVE, BALANCED, PRUDENT)}
 
 #: Un margine di cassa pari o superiore al doppio del tempo che manca al
 #: catalizzatore è considerato pieno: oltre non aggiunge sicurezza utile.
@@ -142,6 +176,33 @@ def phase_score(phases: list[str]) -> float | None:
     return 100.0 * massimo / 4.0
 
 
+def financing_risk_note(
+    cash_runway_months: float | None,
+    catalyst: Catalyst,
+    today: date | None = None,
+) -> str | None:
+    """Avviso esplicito quando la cassa non arriva al catalizzatore.
+
+    Sostituisce la penalizzazione nel punteggio: la società resta fra le
+    candidate — potrebbe essere proprio l'occasione scontata — ma chi legge
+    vede subito che dovrà passare da un aumento di capitale.
+    """
+    months_away = months_to_catalyst(catalyst, today)
+    if cash_runway_months is None or months_away is None or months_away <= 0:
+        return None
+    if cash_runway_months >= months_away:
+        return None
+
+    mancanti = months_away - cash_runway_months
+    return (
+        f"La liquidità copre {cash_runway_months:.1f} mesi contro i {months_away:.1f} che "
+        f"mancano al catalizzatore: {mancanti:.1f} mesi scoperti. Un aumento di capitale "
+        f"prima della lettura dei dati è probabile e diluirà gli azionisti attuali. "
+        f"Attenzione alla coda peggiore: senza accesso al capitale lo studio può essere "
+        f"interrotto, il che è un rischio diverso e più grave della sola diluizione."
+    )
+
+
 def attractiveness_score(
     catalyst: Catalyst,
     criteria: ScreenCriteria,
@@ -149,6 +210,7 @@ def attractiveness_score(
     cash_runway_months: float | None,
     phases: list[str],
     today: date | None = None,
+    appetite: RiskAppetite = BALANCED,
 ) -> float:
     """Punteggio composito 0-100 usato per ordinare le candidate.
 
@@ -158,17 +220,17 @@ def attractiveness_score(
     months_away = months_to_catalyst(catalyst, today)
 
     componenti: list[tuple[float, float]] = [
-        (imminence_score(months_away, criteria.catalyst_window_months), WEIGHT_IMMINENCE)
+        (imminence_score(months_away, criteria.catalyst_window_months), appetite.imminence)
     ]
     copertura = runway_coverage_score(cash_runway_months, months_away)
-    if copertura is not None:
-        componenti.append((copertura, WEIGHT_RUNWAY_COVERAGE))
+    if copertura is not None and appetite.runway_coverage > 0:
+        componenti.append((copertura, appetite.runway_coverage))
     dimensione = size_score(market_cap, criteria)
     if dimensione is not None:
-        componenti.append((dimensione, WEIGHT_SIZE))
+        componenti.append((dimensione, appetite.size))
     fase = phase_score(phases)
     if fase is not None:
-        componenti.append((fase, WEIGHT_PHASE))
+        componenti.append((fase, appetite.phase))
 
     peso_totale = sum(w for _, w in componenti)
     if peso_totale <= 0:
