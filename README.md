@@ -106,7 +106,7 @@ git clone <repo-url> && cd biocatalyst-analyzer
 uv sync
 
 cp .env.example .env      # then fill in .env, see below
-uv run pytest             # 346 tests, everything should be green
+uv run pytest             # 369 tests, everything should be green
 ```
 
 ### Minimum configuration
@@ -185,6 +185,8 @@ from a prediction.
 |---|---|
 | **The model never does arithmetic** | `ReportDraft` — the schema the LLM fills in — contains no computed field at all: no percentage changes, no expected value, no ROI. The rule isn't left to a prompt instruction, it's made structurally impossible to violate. A test asserts this against the schema |
 | **SEC: XBRL APIs, not filing parsing** | `companyfacts` already returns cash, R&D and net income as dated numbers. But facts must be filtered by **duration** (`end - start`), not by the `fp` field: under the same `fp="Q2"` both the quarter and the six-month cumulative coexist, and using `fp` doubles the figures |
+| **An overdue trial is not a finished trial** | Found while testing SLS (SELLAS): the Phase 3 REGAL trial had an *estimated* completion date 268 days in the past but a status of `ACTIVE_NOT_RECRUITING`. Filtering it out as "past" made the asset that actually explains the valuation disappear from the report. An **estimated** past date on an active trial means overdue — potentially the most imminent catalyst of all; an **actual** past date means it really happened |
+| **Event-driven endpoints detected from the outcome text** | A survival-endpoint trial closes when a set number of events has occurred, not on a date. A delay may mean events are accruing more slowly than modelled — a meaningful reading, not a certainty. The delay is also sized against the planned duration, and the model is asked to weigh it against the control arm's historical median survival rather than dismissing it as ambiguous |
 | **A chain of alternative XBRL concepts** | Ensysce uses `NetIncomeLoss` through 2021 and `ProfitLoss` from 2022. With a single concept, net income was missing on 34 periods out of 34, making burn rate impossible to compute |
 | **Burn rate from net income, not from the cash decline** | Between Q3 and Q4 2025 Ensysce's cash *rises* because of a capital raise: measuring the cash decline would report "negative burn" while the company was in fact burning cash |
 | **Risk scores are `float \| None`, never 0** | A zero reads as "no risk" rather than "not computable", and for micro-caps short interest data is often missing entirely |
@@ -226,7 +228,7 @@ uv run mypy src
 uv run pytest
 ```
 
-346 tests. The calculation layer (`analysis/`) is covered at **100%**: those
+369 tests. The calculation layer (`analysis/`) is covered at **100%**: those
 are the numbers people make decisions on, and an error there would not be
 flagged by any API. External calls are mocked with `respx`; no test touches
 the network.

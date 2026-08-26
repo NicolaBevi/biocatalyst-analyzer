@@ -10,6 +10,7 @@ Due particolarità della fonte, gestite qui:
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, ClassVar
 
 from biocatalyst.data.base import (
@@ -25,21 +26,25 @@ logger = get_logger(__name__)
 
 STUDIES_URL = "https://clinicaltrials.gov/api/v2/studies"
 
-REQUESTED_FIELDS = ",".join(
-    [
-        "NCTId",
-        "BriefTitle",
-        "OverallStatus",
-        "Phase",
-        "LeadSponsorName",
-        "EnrollmentCount",
-        "EnrollmentType",
-        "PrimaryCompletionDate",
-        "PrimaryCompletionDateType",
-        "Condition",
-        "PrimaryOutcomeMeasure",
-    ]
+#: La chiave di cache include l'impronta dei campi richiesti: aggiungerne uno
+#: senza cambiarla farebbe servire all'infinito la risposta vecchia, priva del
+#: campo nuovo, e il dato risulterebbe assente senza alcun errore.
+_FIELDS_LIST = (
+    "NCTId",
+    "BriefTitle",
+    "OverallStatus",
+    "Phase",
+    "LeadSponsorName",
+    "EnrollmentCount",
+    "EnrollmentType",
+    "StartDate",
+    "PrimaryCompletionDate",
+    "PrimaryCompletionDateType",
+    "Condition",
+    "PrimaryOutcomeMeasure",
 )
+REQUESTED_FIELDS = ",".join(_FIELDS_LIST)
+FIELDS_FINGERPRINT = hashlib.sha1(REQUESTED_FIELDS.encode()).hexdigest()[:8]
 
 
 class ClinicalTrialsProvider(HTTPDataProvider):
@@ -69,7 +74,7 @@ class ClinicalTrialsProvider(HTTPDataProvider):
                 "countTotal": "true",
             },
             ttl_seconds=self.trial_ttl_seconds,
-            cache_key=f"ctgov:spons:{sponsor.lower()}:{page_size}",
+            cache_key=f"ctgov:spons:{sponsor.lower()}:{page_size}:{FIELDS_FINGERPRINT}",
         )
 
         trials: list[ClinicalTrial] = []
@@ -104,6 +109,7 @@ def _parse_study(study: dict[str, Any]) -> ClinicalTrial | None:
     outcomes = protocol.get("outcomesModule", {})
     primary_outcomes = outcomes.get("primaryOutcomes") or []
     completion = status.get("primaryCompletionDateStruct", {}) or {}
+    inizio = status.get("startDateStruct", {}) or {}
     sponsor_module = protocol.get("sponsorCollaboratorsModule", {})
     lead_sponsor = (sponsor_module.get("leadSponsor") or {}).get("name")
 
@@ -123,6 +129,7 @@ def _parse_study(study: dict[str, Any]) -> ClinicalTrial | None:
         enrollment_count=enrollment.get("count"),
         enrollment_type=enrollment_type,
         primary_outcome_measure=(primary_outcomes[0].get("measure") if primary_outcomes else None),
+        start_date=parse_flexible_date(inizio.get("date")),
         primary_completion_date=parse_flexible_date(completion.get("date")),
         primary_completion_date_type=completion_type,
         condition=protocol.get("conditionsModule", {}).get("conditions") or [],

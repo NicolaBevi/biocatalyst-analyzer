@@ -174,17 +174,32 @@ def catalysts_from_trials(
     return catalysts
 
 
+def planned_duration_months(trial: ClinicalTrial) -> float | None:
+    """Durata pianificata dello studio, da avvio a completamento primario stimato."""
+    if trial.start_date is None or trial.primary_completion_date is None:
+        return None
+    giorni = (trial.primary_completion_date - trial.start_date).days
+    return giorni / 30.44 if giorni > 0 else None
+
+
 def _nota_temporale(trial: ClinicalTrial, ritardo: int, eventi: bool) -> str | None:
-    """Testo che qualifica la data: stimata, in ritardo, e cosa può significare."""
+    """Testo che qualifica la data: stimata, in ritardo, e quanto pesa il ritardo."""
     if ritardo > 0:
         mesi = ritardo / 30.44
         base = (
             f"data stimata superata da {ritardo} giorni ({mesi:.1f} mesi): "
             f"lo studio risulta ancora attivo, la lettura è attesa"
         )
+        # Dimensionare il ritardo rispetto al piano: 9 mesi su uno studio
+        # previsto in 12 è un'altra cosa rispetto a 9 mesi su uno di 60.
+        pianificata = planned_duration_months(trial)
+        if pianificata:
+            quota = mesi / pianificata * 100
+            base += f", pari al {quota:.0f}% della durata pianificata di {pianificata:.0f} mesi"
         if eventi:
             base += (
-                ". Endpoint a eventi: un ritardo può indicare che gli eventi si "
+                ". Endpoint a eventi: la durata dipende dal numero di eventi verificatisi, "
+                "non dal calendario, quindi un ritardo può indicare che gli eventi si "
                 "accumulano più lentamente del previsto"
             )
         return base

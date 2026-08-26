@@ -73,6 +73,10 @@ class ClinicalTrial(BaseModel):
     enrollment_count: int | None = Field(default=None, ge=0)
     enrollment_type: Literal["ACTUAL", "ESTIMATED"] | None = None
     primary_outcome_measure: str | None = None
+    #: Data di avvio: serve a dimensionare un eventuale ritardo rispetto alla
+    #: durata pianificata. Un ritardo di 9 mesi su uno studio previsto in 12
+    #: è un'altra cosa rispetto allo stesso ritardo su uno previsto in 60.
+    start_date: date | None = None
     primary_completion_date: date | None = None
     primary_completion_date_type: Literal["ACTUAL", "ESTIMATED"] | None = None
     condition: list[str] = Field(default_factory=list)

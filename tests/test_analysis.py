@@ -725,3 +725,31 @@ def test_media_pesata_con_peso_totale_nullo() -> None:
 
     assert _weighted([(50.0, 0.0)]) is None
     assert _weighted([]) is None
+
+
+def test_il_ritardo_viene_dimensionato_sulla_durata_pianificata() -> None:
+    """Nove mesi su uno studio previsto in dodici non sono nove mesi su uno di sessanta."""
+    from biocatalyst.analysis.catalysts import planned_duration_months
+
+    trial = ClinicalTrial(
+        nct_id="NCT_REGAL",
+        brief_title="Studio a eventi",
+        phase=["PHASE3"],
+        overall_status="ACTIVE_NOT_RECRUITING",
+        start_date=date(2021, 2, 8),
+        primary_completion_date=date(2025, 12, 1),
+        primary_completion_date_type="ESTIMATED",
+        primary_outcome_measure="OS",
+    )
+
+    assert planned_duration_months(trial) == pytest.approx(58, abs=1)
+
+    nota = catalysts_from_trials([trial], today=date(2026, 8, 26))[0].expected_date_window or ""
+    assert "durata pianificata" in nota
+    assert "58 mesi" in nota
+
+
+def test_durata_pianificata_none_senza_data_di_inizio() -> None:
+    from biocatalyst.analysis.catalysts import planned_duration_months
+
+    assert planned_duration_months(_trial("NCT1")) is None
