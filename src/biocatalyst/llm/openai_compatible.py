@@ -115,6 +115,16 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         content = response.choices[0].message.content
         if content is None or not content.strip():
             finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                # Caso tipico dei modelli di ragionamento: il budget di token si
+                # esaurisce nel reasoning interno e non ne resta per la risposta.
+                # Ritentare con lo stesso max_tokens fallirebbe allo stesso modo,
+                # quindi è un errore definitivo e non ritentabile.
+                raise LLMBadRequestError(
+                    f"{self.name.value}: nessun testo prodotto, budget di token esaurito "
+                    f"(max_tokens={max_tokens}). Con un modello di ragionamento serve un "
+                    f"max_tokens più alto."
+                )
             raise LLMEmptyResponseError(
                 f"{self.name.value}: risposta senza testo (finish_reason={finish_reason})"
             )

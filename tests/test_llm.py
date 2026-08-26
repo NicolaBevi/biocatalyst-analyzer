@@ -520,3 +520,38 @@ def test_ogni_errore_ritentabile_e_sottoclasse_di_llm_error() -> None:
     assert LLMAuthenticationError not in RETRYABLE_ERRORS
     assert LLMBadRequestError not in RETRYABLE_ERRORS
     assert LLMConfigurationError not in RETRYABLE_ERRORS
+
+
+def test_openai_compatibile_token_esauriti_non_e_ritentabile() -> None:
+    """Un modello di ragionamento può esaurire i token prima di produrre testo:
+    ritentare con lo stesso max_tokens fallirebbe identicamente, a pagamento."""
+    provider = DeepSeekProvider(api_key=SecretStr("k"), max_retries=3)
+    provider.retry_initial_wait = 0.0
+    choice = MagicMock()
+    choice.message.content = ""
+    choice.finish_reason = "length"
+    response = MagicMock()
+    response.choices = [choice]
+    client = MagicMock()
+    client.chat.completions.create.return_value = response
+    provider._client = client
+
+    with pytest.raises(LLMBadRequestError, match="budget di token esaurito"):
+        provider.complete("sys", [Message(role="user", content="x")], max_tokens=20)
+
+    # Una sola chiamata: l'errore è definitivo, non transitorio.
+    assert client.chat.completions.create.call_count == 1
+
+
+def test_anthropic_token_esauriti_non_e_ritentabile() -> None:
+    provider = AnthropicProvider(api_key=SecretStr("k"), max_retries=3)
+    provider.retry_initial_wait = 0.0
+    response = _text_response("", stop_reason="max_tokens")
+    client = MagicMock()
+    client.messages.create.return_value = response
+    provider._client = client
+
+    with pytest.raises(LLMBadRequestError, match="budget di token esaurito"):
+        provider.complete("sys", [Message(role="user", content="x")], max_tokens=20)
+
+    assert client.messages.create.call_count == 1

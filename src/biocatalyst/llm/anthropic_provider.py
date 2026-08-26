@@ -91,6 +91,13 @@ class AnthropicProvider(BaseLLMProvider):
 
         text = "".join(block.text for block in response.content if block.type == "text")
         if not text.strip():
+            if response.stop_reason == "max_tokens":
+                # Budget esaurito prima di produrre testo: ritentare identicamente
+                # fallirebbe allo stesso modo, quindi non è un errore transitorio.
+                raise LLMBadRequestError(
+                    f"Anthropic: nessun testo prodotto, budget di token esaurito "
+                    f"(max_tokens={max_tokens}). Serve un max_tokens più alto."
+                )
             raise LLMEmptyResponseError(
                 f"Anthropic: risposta senza testo (stop_reason={response.stop_reason})"
             )
