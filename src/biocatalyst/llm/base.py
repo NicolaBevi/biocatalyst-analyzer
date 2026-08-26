@@ -93,6 +93,10 @@ class BaseLLMProvider(ABC):
     #: invece di far esplodere la chiamata.
     supports_temperature: ClassVar[bool] = True
 
+    #: Se il provider accetta `response_format={"type": "json_object"}`,
+    #: che rende molto più affidabile l'output strutturato.
+    supports_json_mode: ClassVar[bool] = False
+
     #: Parametri del backoff esponenziale. Sono attributi di classe (e non
     #: costanti inline) per poterli azzerare nei test senza attese reali.
     retry_initial_wait: ClassVar[float] = 1.0

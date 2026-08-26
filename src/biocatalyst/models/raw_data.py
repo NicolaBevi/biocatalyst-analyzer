@@ -30,6 +30,8 @@ class MarketData(BaseModel):
     # senza questa data il numero sembra "live" ma può essere vecchio di settimane.
     short_interest_date: date | None = None
     average_volume: float | None = Field(default=None, ge=0)
+    #: Target medio degli analisti, richiesto dall'intestazione del report.
+    analyst_target_mean: float | None = Field(default=None, gt=0)
     total_cash_usd: float | None = Field(default=None, ge=0)
     total_debt_usd: float | None = Field(default=None, ge=0)
     price_history: list[PricePoint] = Field(default_factory=list)

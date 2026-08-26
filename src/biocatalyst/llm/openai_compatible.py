@@ -38,6 +38,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     #: accettano `max_tokens`. Il nome del parametro è quindi per-provider.
     max_tokens_param: ClassVar[str] = "max_tokens"
 
+    #: Verificato su DeepSeek: l'endpoint chat/completions accetta
+    #: response_format={"type": "json_object"}.
+    supports_json_mode: ClassVar[bool] = True
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._client: openai.OpenAI | None = None

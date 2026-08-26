@@ -72,6 +72,21 @@ class TAMEstimate(BaseModel):
     methodology_notes: str
 
 
+class AnalysisBundle(BaseModel):
+    """Output completo del ClinicalFinancialAnalystAgent.
+
+    Le metriche e i catalizzatori sono deterministici (calcolati in
+    `analysis/`); la valutazione clinica e il TAM sono le uniche parti affidate
+    all'LLM, e possono mancare se la chiamata fallisce.
+    """
+
+    metrics: FinancialMetrics
+    catalysts: list[Catalyst] = Field(default_factory=list)
+    clinical_assessment: ClinicalAssessment | None = None
+    tam: TAMEstimate | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
 class MarketContext(BaseModel):
     """Output del MarketNewsAgent: contesto di mercato, con fatti e speculazione
     tenuti esplicitamente separati."""

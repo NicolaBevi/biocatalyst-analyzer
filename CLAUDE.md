@@ -34,7 +34,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 2** — Modelli Pydantic condivisi
 - [x] **Fase 3** — Data provider (yfinance, SEC EDGAR, ClinicalTrials.gov, openFDA, Finnhub, Frankfurter)
 - [x] **Fase 4** — Analysis engine (cash runway, burn rate, squeeze score, EV/ROI) — **copertura 100%**
-- [ ] Fase 5 — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
+- [x] **Fase 5** — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
 - [ ] Fase 6 — Rendering report (Markdown/PDF/JSON)
 - [ ] Fase 7 — CLI Typer (analyze/screen/compare)
 - [ ] Fase 8 — Modalità screen (universo titoli, filtri, ranking)
@@ -48,6 +48,7 @@ src/biocatalyst/
 ├── config.py       # Settings (pydantic-settings): provider LLM, key, cache TTL — FATTO
 ├── log.py          # structlog, configure_logging()/get_logger() — FATTO
 ├── llm/            # BaseLLMProvider + 6 provider + factory — FATTO (Fase 1)
+│   └── structured.py # output JSON validato con Pydantic — Fase 5
 ├── models/         # schemi Pydantic condivisi — FATTO (Fase 2)
 ├── data/           # 6 fonti + cache + factory — FATTO (Fase 3)
 │   ├── base.py     #   errori, RateLimiter, HTTPDataProvider, collect_safely
@@ -62,7 +63,10 @@ src/biocatalyst/
 │   ├── expected_value.py # EV, ROI, variazioni target
 │   ├── catalysts.py      # estrazione e ordinamento per imminenza
 │   └── metrics.py        # compute_financial_metrics() -> (metriche, note)
-├── agents/         # i 4 agenti — vuoto, Fase 5
+├── agents/         # i 4 agenti + pipeline — FATTO (Fase 5)
+│   ├── base.py     #   BaseAgent: run(context)->context, chiavi richieste
+│   ├── data_collector.py, analyst.py, market_news.py, report_writer.py
+│   └── pipeline.py #   analyze(ticker) con callback di avanzamento
 ├── report/         # rendering md/pdf/json — vuoto, Fase 6
 ├── cli.py          # entrypoint Typer — solo stub (comando `version`)
 └── app.py          # UI Streamlit — solo stub
@@ -96,6 +100,12 @@ src/biocatalyst/
 | **`dilution_risk_score` distingue `None` da `False`** sui segnali dai filing | `None` = ricerca non eseguita (peso ridistribuito), `False` = cercato e non trovato (contribuisce zero). Confonderli falserebbe il punteggio |
 | **Il cambio EUR/USD si semplifica nell'Expected Value** | Convertendo ingresso e uscita allo stesso tasso, il valore atteso in euro dipende solo dal rapporto prezzo atteso/prezzo corrente. Il tasso serve comunque per le azioni acquistabili e va citato — ma **il rischio di cambio fra ingresso e uscita non è modellato**, ed è dichiarato nel docstring |
 | **`ScenarioInput`** (probabilità, target, condizioni) come unico input dell'LLM agli scenari | Il dataclass è volutamente privo della variazione percentuale: rende strutturalmente impossibile che l'LLM fornisca un numero aritmetico, come da requisito |
+| **`ReportDraft` privo di qualunque campo aritmetico** | Stessa logica applicata all'agente scrittore: niente variazioni percentuali, EV o ROI nello schema che il modello compila. La regola non è affidata a un'istruzione nel prompt ma resa impossibile da violare. C'è un test che lo verifica sullo schema |
+| **`complete_structured()` ritenta rimandando al modello l'errore di validazione** | Ripetere la richiesta identica produrrebbe con ogni probabilità lo stesso JSON malformato. I tentativi di *parsing* sono contati separatamente dai retry di rete, perché un JSON non conforme non è un problema transitorio |
+| **Il sentiment di settore viene sovrascritto coi valori misurati** dopo la chiamata all'LLM | È un dato misurato da yfinance, non una deduzione: il modello non deve poterlo alterare. Verificato da un test in cui il modello dichiara un sentiment inventato |
+| **DataCollectorAgent non usa l'LLM** | Il suo compito è raccogliere fatti verificabili; un modello linguistico introdurrebbe solo il rischio di inventarli |
+| **`_sponsor_query()` toglie la forma societaria dalla ragione sociale** | ClinicalTrials.gov registra "Ensysce Biosciences", la SEC "Ensysce Biosciences, Inc.": senza la normalizzazione la ricerca per sponsor non troverebbe nulla |
+| **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
 

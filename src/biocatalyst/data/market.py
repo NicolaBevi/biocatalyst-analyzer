@@ -100,6 +100,7 @@ class MarketDataProvider:
             short_percent_of_float=None if short_fraction is None else short_fraction * 100,
             short_interest_date=_epoch_to_date(info, "dateShortInterest"),
             average_volume=_safe_float(info, "averageVolume"),
+            analyst_target_mean=_safe_float(info, "targetMeanPrice"),
             total_cash_usd=_safe_float(info, "totalCash"),
             total_debt_usd=_safe_float(info, "totalDebt"),
             price_history=self.get_price_history(ticker),
