@@ -39,7 +39,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 7** — CLI Typer (analyze/compare completi, screen rimandato alla Fase 8)
 - [x] **Fase 8** — Modalità screen (universo titoli, filtri, ranking)
 - [x] **Fase 9** — UI Streamlit
-- [ ] Fase 10 — Test, CI, Docker, README completo
+- [x] **Fase 10** — Test, CI, Docker, README completo
 
 ## Architettura
 
@@ -135,6 +135,9 @@ src/biocatalyst/
 | **Streaming attivo per default** (`LLM_USE_STREAMING`) | Risolve il timeout di ~60s di Streamlit Cloud sulle risposte HTTP in uscita. **La nota precedente in questo file era sbagliata**: spostare la chiamata in un thread non accorcia la risposta HTTP, quindi il proxy la taglierebbe comunque. Lo streaming invece tiene i byte in movimento. Misurato su `deepseek-v4-pro`: primo chunk dopo 0,7s, intervallo massimo fra chunk 0,7s su 67s totali — nessuna attesa singola vicina ai 60s |
 | **La pipeline gira in un thread, la pagina legge uno stato condiviso** | Serve comunque, ma per un motivo diverso dal timeout: eseguire 200s di pipeline dentro il ciclo di rendering bloccherebbe l'interfaccia. Un `st.fragment(run_every=2)` ridisegna la sola barra di avanzamento, e un `st.rerun(scope="app")` a fine lavoro sostituisce la barra col report |
 | **UI testata con `streamlit.testing.v1.AppTest`** | È il framework ufficiale: permette di verificare metriche, avvisi ed errori mostrati in pagina senza un browser |
+| **Dockerfile: dipendenze di sistema ricavate, non copiate** | Ho verificato quali librerie WeasyPrint risolve davvero via `ctypes.util.find_library` (gobject, pango, pangoft2, harfbuzz, fontconfig, gio, cairo) e a quali pacchetti Debian corrispondono. Le versioni recenti hanno smesso di usare gdk-pixbuf, che era nella bozza iniziale ed era peso inutile. glib non è nominato di proposito: arriva come dipendenza di pango e il suo nome cambia fra Debian e Ubuntu recenti (`libglib2.0-0t64`) |
+| **CI con matrice 3.11/3.12/3.13** | `requires-python = ">=3.11"` va verificato, non solo dichiarato. Controllato in locale con `uv run --python 3.11 --isolated pytest`: 345 test verdi anche lì |
+| **Il job Docker della CI costruisce ma non pubblica** | Serve solo a garantire che il Dockerfile sia costruibile; l'immagine viene poi avviata per verificare che la CLI risponda |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
@@ -160,6 +163,19 @@ src/biocatalyst/
 - **yfinance `shortPercentOfFloat` è una frazione** (0,0125 = 1,25%): normalizzato a percentuale nel provider. Trattarlo come percentuale sbaglierebbe di 100× lo squeeze score.
 - **yfinance `dateShortInterest` è un timestamp Unix**, non una data ISO.
 - **Frankfurter nei weekend/festivi** restituisce silenziosamente l'ultimo giorno lavorativo: si cita sempre la data *della risposta*, non quella richiesta.
+
+## Non verificato (dichiarato, non nascosto)
+
+- **Il Dockerfile non è mai stato costruito**: Docker non è disponibile in
+  questo ambiente. I pacchetti di sistema sono ricavati empiricamente dalle
+  librerie che WeasyPrint risolve davvero, ma il `docker build` va eseguito
+  almeno una volta prima di considerarlo funzionante. Il job `docker` della CI
+  lo farebbe automaticamente al primo push.
+- **La CI non è mai stata eseguita su GitHub**: il file è YAML valido e tutti i
+  suoi comandi passano in locale, ma il comportamento su runner GitHub (cache
+  di uv, `setup-uv@v4`) resta da confermare.
+- **Nulla è mai stato pubblicato su GitHub**: nessun remote configurato, per
+  scelta esplicita dell'utente.
 
 ## Note per sessioni future
 

@@ -2,38 +2,106 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
+  workflow_dispatch:
+
+# Un push che arriva mentre il precedente è ancora in esecuzione annulla il
+# vecchio: interessa l'esito dell'ultimo commit, non di quelli superati.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # I test non fanno chiamate di rete reali, ma la configurazione va comunque
+  # validata all'import: questi sono valori fittizi, non credenziali.
+  SEC_EDGAR_USER_AGENT: "BioCatalystAnalyzer-CI ci@example.com"
+  DEFAULT_PROVIDER: "anthropic"
+  ANTHROPIC_API_KEY: "sk-ant-segnaposto-per-la-ci"
 
 jobs:
-  lint-and-test:
+  qualita:
+    name: Lint e type check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - name: Installa uv
+        uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: uv.lock
 
-      - name: Set up Python
-        run: uv python install
+      - name: Installa le dipendenze
+        run: uv sync --frozen
 
-      - name: Install dependencies
-        run: uv sync
+      - name: ruff check
+        run: uv run ruff check --output-format=github .
 
-      - name: Lint (ruff check)
-        run: uv run ruff check .
-
-      - name: Format check (ruff format)
+      - name: ruff format
         run: uv run ruff format --check .
 
-      - name: Type check (mypy)
+      - name: mypy
         run: uv run mypy src
 
-      - name: Test (pytest)
-        run: uv run pytest
-        env:
-          SEC_EDGAR_USER_AGENT: "BioCatalystAnalyzer-CI ci@example.com"
-          ANTHROPIC_API_KEY: "sk-ant-ci-placeholder"
-          DEFAULT_PROVIDER: "anthropic"
+  test:
+    name: Test su Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 è il minimo dichiarato in requires-python: va verificato
+        # davvero, non solo dichiarato.
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installa uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Librerie di sistema per WeasyPrint
+        # Servono al test che genera un PDF reale: senza, quel test fallisce
+        # con un errore di libreria mancante invece che per un bug del codice.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+            libfontconfig1 libcairo2 fonts-liberation
+
+      - name: Installa le dipendenze
+        run: uv sync --frozen --python ${{ matrix.python }}
+
+      - name: pytest
+        run: uv run --python ${{ matrix.python }} pytest --cov-report=term-missing
+
+  docker:
+    name: Build dell'immagine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Nessun push: l'immagine serve solo a verificare che il Dockerfile
+          # sia costruibile.
+          push: false
+          load: true
+          tags: biocatalyst-analyzer:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: L'immagine parte e la CLI risponde
+        run: |
+          docker run --rm \
+            -e SEC_EDGAR_USER_AGENT="${SEC_EDGAR_USER_AGENT}" \
+            -e DEFAULT_PROVIDER="${DEFAULT_PROVIDER}" \
+            -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+            --entrypoint biocatalyst \
+            biocatalyst-analyzer:ci version

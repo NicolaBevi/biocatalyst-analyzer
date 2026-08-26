@@ -573,3 +573,22 @@ def test_la_candidata_a_corto_di_cassa_resta_nel_risultato(
     assert "AAA" in per_ticker  # non scartata
     assert per_ticker["AAA"].financing_risk is not None
     assert per_ticker["BBB"].financing_risk is None
+
+
+def test_punteggio_zero_se_tutti_i_pesi_sono_nulli() -> None:
+    """Guardia difensiva: un profilo con tutti i pesi a zero non deve dividere per zero."""
+    from biocatalyst.analysis.screening import RiskAppetite
+
+    nullo = RiskAppetite("nullo", imminence=0.0, runway_coverage=0.0, size=0.0, phase=0.0)
+
+    punteggio = attractiveness_score(
+        catalyst=_catalizzatore(giorni=30),
+        criteria=_criteri(),
+        market_cap=20_000_000,
+        cash_runway_months=24.0,
+        phases=["PHASE3"],
+        today=OGGI,
+        appetite=nullo,
+    )
+
+    assert punteggio == 0.0
