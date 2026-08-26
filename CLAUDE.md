@@ -32,7 +32,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 0** — Scheletro repo e configurazione
 - [x] **Fase 1** — Layer LLM multi-provider
 - [x] **Fase 2** — Modelli Pydantic condivisi
-- [ ] Fase 3 — Data provider (yfinance, SEC EDGAR, ClinicalTrials.gov, openFDA, Finnhub, Frankfurter)
+- [x] **Fase 3** — Data provider (yfinance, SEC EDGAR, ClinicalTrials.gov, openFDA, Finnhub, Frankfurter)
 - [ ] Fase 4 — Analysis engine (cash runway, burn rate, squeeze score, EV/ROI)
 - [ ] Fase 5 — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
 - [ ] Fase 6 — Rendering report (Markdown/PDF/JSON)
@@ -49,7 +49,13 @@ src/biocatalyst/
 ├── log.py          # structlog, configure_logging()/get_logger() — FATTO
 ├── llm/            # BaseLLMProvider + 6 provider + factory — FATTO (Fase 1)
 ├── models/         # schemi Pydantic condivisi — FATTO (Fase 2)
-├── data/           # yfinance, SEC, ClinicalTrials, news, cache — vuoto, Fase 3
+├── data/           # 6 fonti + cache + factory — FATTO (Fase 3)
+│   ├── base.py     #   errori, RateLimiter, HTTPDataProvider, collect_safely
+│   ├── cache.py    #   diskcache con TTL per chiave
+│   ├── sec.py      #   ticker->CIK, XBRL companyfacts, full-text search
+│   ├── market.py   #   yfinance: quotazione/float/short + sentiment XBI-IBB
+│   ├── clinical_trials.py, fda.py, news.py, forex.py
+│   └── factory.py  #   build_data_providers(settings) -> DataProviders
 ├── analysis/       # calcoli deterministici (EV, runway, squeeze score) — vuoto, Fase 4
 ├── agents/         # i 4 agenti — vuoto, Fase 5
 ├── report/         # rendering md/pdf/json — vuoto, Fase 6
@@ -74,6 +80,11 @@ src/biocatalyst/
 | **Sorgenti non attaccate a ogni singolo campo numerico**, ma aggregate in `SourceQuality.sources_consulted` a livello di report | Un campo "fonte" per ogni float avrebbe raddoppiato la dimensione di ogni modello; le sezioni narrative dell'LLM citano comunque la fonte inline nel testo dove rilevante |
 | **`ScenarioAnalysis` con campi `bull`/`base`/`bear` nominati**, non `list[Scenario]` | Sono sempre esattamente tre scenari con nomi fissi: un validator (`model_validator`) verifica che le probabilità sommino a 1.0 (tolleranza ±0.01) — un `list` generico avrebbe richiesto validare anche cardinalità e nomi a runtime |
 | **`Catalyst` richiede `expected_date` O `expected_date_window`** | Un catalizzatore senza nessuna informazione temporale non è ordinabile per imminenza (requisito esplicito della pipeline) — validato con `model_validator` |
+| **Catena di concetti XBRL alternativi** (`NetIncomeLoss` → `ProfitLoss` → `NetIncomeLossAvailableToCommonStockholdersBasic`), fusi per periodo | **Verificato su ENSC**: usa `NetIncomeLoss` fino al 2021 e `ProfitLoss` dal 2022. Con un solo concetto il risultato economico risultava assente su 34 periodi su 34, rendendo incalcolabile il burn rate. La fusione è per singolo periodo, non "primo concetto non vuoto", per coprire l'intera serie storica |
+| **Fatti XBRL filtrati per durata (`end - start`), non per campo `fp`** | Per uno stesso `fp` coesistono il fatto trimestrale e il cumulato year-to-date (verificato: Q2 2026 di ENSC ha sia 2.471.752 su 3 mesi sia 5.818.633 su 6 mesi). Filtrare per `fp` raddoppierebbe i valori. Finestra 80-100gg per il trimestre, 350-380 per l'esercizio |
+| **`RateLimiter` condiviso a livello di classe per la SEC** (0,12s ≈ 8 req/s) | La SEC conta le 10 req/s **sommando** `www`, `data` ed `efts`: un limitatore per-provider non basterebbe |
+| **`respx` per i test HTTP, non `responses`** | `responses` intercetta solo la libreria `requests`; i nostri provider usano `httpx` |
+| **`collect_safely(label, fetch, missing_data)`** come unico punto di degradazione | Realizza il requisito "se un data provider fallisce il report si genera comunque": traduce l'errore in una riga di `missing_data`. Non cattura le eccezioni non-`DataProviderError`, così un bug di programmazione resta visibile |
 
 ## Rischi noti da tenere presenti nelle fasi successive
 
@@ -83,6 +94,20 @@ src/biocatalyst/
 - **Finviz** (menzionato nei requisiti originali per lo screener universo Fase 8) — non ancora verificato. Non ha un'API ufficiale gratuita stabile: da affrontare quando si arriva alla Fase 8.
 - **ClinicalTrials.gov API v2 non distingue "Phase 2b" da "Phase 2"** (valori possibili: `PHASE1`/`PHASE2`/`PHASE3`/`PHASE4`/`EARLY_PHASE1`/`NA`). `ScreenCriteria.min_pipeline_phase` è per ora una stringa semplice; il requisito originale "Phase 2b/3 o NDA/BLA submitted" andrà approssimato in Fase 8 con euristiche aggiuntive (enrollment, disegno dello studio), non con un solo valore di questo campo.
 - **Nomi modello di default nei provider LLM** (`gpt-4.1`, `llama-3.3-70b-versatile`, `gemini-2.5-flash` in `llm/openai_compatible.py` e `gemini_provider.py`) sono plausibili ma non verificati con chiamate reali — l'utente inserirà i modelli corretti nel `.env` quando servirà (gli override per-agente in `.env.example` hanno comunque priorità sul default di classe).
+
+## Particolarità delle fonti dati (verificate sulle API reali, Fase 3)
+
+- **SEC full-text search** (`efts.sec.gov/LATEST/search-index`): con il solo parametro `q` risponde **500**. Richiede `ciks` oppure un intervallo di date. Noi passiamo sempre `ciks`.
+- **CIK zero-paddato a 10 cifre**: `company_tickers.json` espone il CIK come intero senza padding; gli URL di `data.sec.gov` con CIK non paddato rispondono 404.
+- **Q4 non esiste in XBRL**: derivato come FY meno i primi tre trimestri, solo se tutti e quattro i valori sono presenti (altrimenti resta assente, invece di produrre un numero sbagliato in silenzio). Verificato su ENSC: −10.176.187 − (−7.408.218) = −2.767.969.
+- **Filing rettificati** (`10-K/A`, `10-Q/A`) riemettono lo stesso periodo con valori diversi: vince il deposito più recente. Una rettifica mantiene il tipo di origine (`10-Q/A` resta un 10-Q).
+- **Cassa = fatto "instant"**: ha solo `end`, mai `start`. Codice che assume `start` su ogni fatto si rompe.
+- **ClinicalTrials.gov `query.spons`** trova anche gli studi dove la società è solo *collaboratore*: il filtro sul lead sponsor va rifatto lato client.
+- **Date parziali CT.gov**: le date stimate possono essere `"2027-04"` (solo anno-mese) — `date.fromisoformat` da solo fallisce. Normalizzate al primo del mese da `parse_flexible_date`.
+- **openFDA usa date compatte** (`"20160523"`) e risponde **404 quando non ci sono risultati**: per una biotech clinical-stage senza farmaci approvati è l'esito normale, tradotto in lista vuota e non in errore.
+- **yfinance `shortPercentOfFloat` è una frazione** (0,0125 = 1,25%): normalizzato a percentuale nel provider. Trattarlo come percentuale sbaglierebbe di 100× lo squeeze score.
+- **yfinance `dateShortInterest` è un timestamp Unix**, non una data ISO.
+- **Frankfurter nei weekend/festivi** restituisce silenziosamente l'ultimo giorno lavorativo: si cita sempre la data *della risposta*, non quella richiesta.
 
 ## Note per sessioni future
 

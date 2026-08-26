@@ -38,6 +38,7 @@ dev = [
     # Importato dai test per costruire le eccezioni degli SDK: anthropic e
     # openai tipizzano le loro eccezioni su httpx2, non su httpx.
     "httpx2>=2",
+    "respx>=0.23.1",
 ]
 
 [project.scripts]
@@ -79,3 +80,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=biocatalyst --cov-report=term-missing"
+markers = [
+    "rate_limiter_reale: esclude il test dalla fixture che azzera i rate limiter",
+]
