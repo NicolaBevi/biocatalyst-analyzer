@@ -855,3 +855,17 @@ def test_build_data_providers_usa_i_ttl_della_configurazione(
     assert providers.forex.cache is providers.cache
     assert providers.news.cache is providers.cache
     providers.close()
+
+
+@respx.mock
+def test_finnhub_il_token_non_finisce_nei_messaggi_di_errore() -> None:
+    """Il token viaggia come query param: un messaggio che citasse l'URL completo
+    lo esporrebbe in log e traceback."""
+    respx.get("https://finnhub.io/api/v1/company-news").mock(return_value=httpx.Response(500))
+    provider = NewsProvider(api_key=SecretStr("token-segretissimo"), max_retries=1)
+    provider.retry_initial_wait = 0.0
+
+    with pytest.raises(DataProviderError) as exc_info:
+        provider.get_company_news("ENSC")
+
+    assert "token-segretissimo" not in str(exc_info.value)
