@@ -33,7 +33,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 - [x] **Fase 1** — Layer LLM multi-provider
 - [x] **Fase 2** — Modelli Pydantic condivisi
 - [x] **Fase 3** — Data provider (yfinance, SEC EDGAR, ClinicalTrials.gov, openFDA, Finnhub, Frankfurter)
-- [ ] Fase 4 — Analysis engine (cash runway, burn rate, squeeze score, EV/ROI)
+- [x] **Fase 4** — Analysis engine (cash runway, burn rate, squeeze score, EV/ROI) — **copertura 100%**
 - [ ] Fase 5 — I 4 agenti (DataCollector, ClinicalFinancialAnalyst, MarketNews, ReportWriter)
 - [ ] Fase 6 — Rendering report (Markdown/PDF/JSON)
 - [ ] Fase 7 — CLI Typer (analyze/screen/compare)
@@ -56,7 +56,12 @@ src/biocatalyst/
 │   ├── market.py   #   yfinance: quotazione/float/short + sentiment XBI-IBB
 │   ├── clinical_trials.py, fda.py, news.py, forex.py
 │   └── factory.py  #   build_data_providers(settings) -> DataProviders
-├── analysis/       # calcoli deterministici (EV, runway, squeeze score) — vuoto, Fase 4
+├── analysis/       # calcoli deterministici — FATTO (Fase 4), copertura 100%
+│   ├── financials.py     # burn rate, cash runway
+│   ├── risk.py           # squeeze score, dilution risk
+│   ├── expected_value.py # EV, ROI, variazioni target
+│   ├── catalysts.py      # estrazione e ordinamento per imminenza
+│   └── metrics.py        # compute_financial_metrics() -> (metriche, note)
 ├── agents/         # i 4 agenti — vuoto, Fase 5
 ├── report/         # rendering md/pdf/json — vuoto, Fase 6
 ├── cli.py          # entrypoint Typer — solo stub (comando `version`)
@@ -85,6 +90,12 @@ src/biocatalyst/
 | **`RateLimiter` condiviso a livello di classe per la SEC** (0,12s ≈ 8 req/s) | La SEC conta le 10 req/s **sommando** `www`, `data` ed `efts`: un limitatore per-provider non basterebbe |
 | **`respx` per i test HTTP, non `responses`** | `responses` intercetta solo la libreria `requests`; i nostri provider usano `httpx` |
 | **`collect_safely(label, fetch, missing_data)`** come unico punto di degradazione | Realizza il requisito "se un data provider fallisce il report si genera comunque": traduce l'errore in una riga di `missing_data`. Non cattura le eccezioni non-`DataProviderError`, così un bug di programmazione resta visibile |
+| **Burn rate dalla media del risultato netto**, non dal calo di cassa | Verificato su ENSC: fra Q3 e Q4 2025 la cassa *sale* da 1,67M a 4,31M per un aumento di capitale — misurando il calo di cassa l'azienda avrebbe "burn negativo" pur bruciando liquidità. Il risultato netto è a sua volta distorto dalle poste non monetarie (ENSC ha un Q3 2024 in utile con cassa in calo), ma la media su 4 trimestri assorbe gli anomali. Resta un'approssimazione: il rendiconto finanziario non è esposto dalle API XBRL usate |
+| **Score di rischio `float \| None`, mai 0 come segnaposto** | Uno zero si leggerebbe come "rischio nullo" invece che "non calcolabile". Per i micro-cap i dati sullo short interest mancano spesso del tutto. Ha richiesto di rendere opzionali `short_squeeze_score` e `dilution_risk_score` in `FinancialMetrics` (modifica alla Fase 2) |
+| **Pesi ridistribuiti sui componenti disponibili** negli score compositi | Con un ingrediente assente il punteggio usa solo gli altri, invece di penalizzare implicitamente il titolo per un dato mancante |
+| **`dilution_risk_score` distingue `None` da `False`** sui segnali dai filing | `None` = ricerca non eseguita (peso ridistribuito), `False` = cercato e non trovato (contribuisce zero). Confonderli falserebbe il punteggio |
+| **Il cambio EUR/USD si semplifica nell'Expected Value** | Convertendo ingresso e uscita allo stesso tasso, il valore atteso in euro dipende solo dal rapporto prezzo atteso/prezzo corrente. Il tasso serve comunque per le azioni acquistabili e va citato — ma **il rischio di cambio fra ingresso e uscita non è modellato**, ed è dichiarato nel docstring |
+| **`ScenarioInput`** (probabilità, target, condizioni) come unico input dell'LLM agli scenari | Il dataclass è volutamente privo della variazione percentuale: rende strutturalmente impossibile che l'LLM fornisca un numero aritmetico, come da requisito |
 
 ## Rischi noti da tenere presenti nelle fasi successive
 

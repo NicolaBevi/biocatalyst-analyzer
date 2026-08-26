@@ -17,10 +17,17 @@ from biocatalyst.models.raw_data import SectorSentiment
 
 
 class FinancialMetrics(BaseModel):
+    """Metriche derivate, calcolate in Python puro (mai chieste all'LLM).
+
+    Gli score sono opzionali: per i micro-cap i dati sullo short interest
+    mancano spesso del tutto, e uno zero al posto di un dato assente si
+    leggerebbe come "rischio nullo" invece che come "non calcolabile".
+    """
+
     cash_runway_months: float | None = Field(default=None, ge=0)
     quarterly_burn_rate_usd: float | None = Field(default=None, ge=0)
-    short_squeeze_score: float = Field(ge=0, le=100)
-    dilution_risk_score: float = Field(ge=0, le=100)
+    short_squeeze_score: float | None = Field(default=None, ge=0, le=100)
+    dilution_risk_score: float | None = Field(default=None, ge=0, le=100)
     as_of: date
 
 
