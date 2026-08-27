@@ -20,27 +20,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
+# L'utente va creato PRIMA di installare le dipendenze. Farlo dopo, con un
+# `chown -R /app`, duplicherebbe l'intero ambiente virtuale in un nuovo layer:
+# nella prima versione di questo file erano 547 MB sprecati su 1,71 GB totali.
+# I report generati finiscono in /app/reports: montarci un volume per
+# conservarli fuori dal contenitore.
+RUN useradd --create-home --uid 1000 biocatalyst \
+    && mkdir -p /app/reports /app/.cache \
+    && chown -R biocatalyst:biocatalyst /app
+
+USER biocatalyst
 WORKDIR /app
-
-# Le dipendenze in un layer separato: cambiano molto meno spesso del codice,
-# quindi la cache di build regge fra una modifica e l'altra.
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
-
-COPY src ./src
-COPY README.md ./
-RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_NO_CACHE=1
 
-# I report generati finiscono qui: montare un volume su questa cartella per
-# conservarli fuori dal contenitore.
-RUN mkdir -p /app/reports /app/.cache \
-    && useradd --create-home --uid 1000 biocatalyst \
-    && chown -R biocatalyst:biocatalyst /app
-USER biocatalyst
+# Le dipendenze in un layer separato: cambiano molto meno spesso del codice,
+# quindi la cache di build regge fra una modifica e l'altra.
+COPY --chown=biocatalyst:biocatalyst pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY --chown=biocatalyst:biocatalyst src ./src
+COPY --chown=biocatalyst:biocatalyst README.md ./
+RUN uv sync --frozen --no-dev
 
 EXPOSE 8501
 
