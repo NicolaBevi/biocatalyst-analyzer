@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     llm_use_streaming: bool = True
 
     #: Lingua di default dei report ("it" o "en"), sovrascrivibile per singola analisi.
-    report_language: Literal["it", "en"] = "it"
+    report_language: Literal["en", "it"] = "en"
 
     # --- Logging -------------------------------------------------------------------------
     log_level: str = "INFO"

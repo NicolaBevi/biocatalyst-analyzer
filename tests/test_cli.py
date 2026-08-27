@@ -194,8 +194,8 @@ def test_analyze_salva_in_cartella_per_ticker(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     cartella = tmp_path / "reports" / "ENSC"
-    assert (cartella / "ENSC_2026-08-26_it.md").exists()
-    assert (cartella / "ENSC_2026-08-26_it.json").exists()
+    assert (cartella / "ENSC_2026-08-26_en.md").exists()
+    assert (cartella / "ENSC_2026-08-26_en.json").exists()
 
 
 def test_analyze_con_output_esplicito(tmp_path: Path) -> None:
@@ -211,7 +211,7 @@ def test_analyze_mostra_il_riassunto() -> None:
 
     assert result.exit_code == 0
     assert "SELL" in result.output
-    assert "0.64 mesi" in result.output or "0.6 mesi" in result.output
+    assert "0.64 months" in result.output or "0.6 months" in result.output
 
 
 def test_analyze_mostra_gli_avvisi(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,7 +277,7 @@ def test_compare_ordina_per_rendimento_atteso(monkeypatch: pytest.MonkeyPatch) -
     assert result.exit_code == 0
     # Il migliore per primo: il confronto serve a scegliere.
     posizioni = [result.output.index(t) for t in ("BBB", "CCC", "AAA")]
-    tabella = result.output[result.output.index("Confronto") :]
+    tabella = result.output[result.output.index("Comparison") :]
     assert tabella.index("BBB") < tabella.index("CCC") < tabella.index("AAA")
     assert posizioni  # i tre ticker compaiono tutti
 
@@ -294,7 +294,7 @@ def test_compare_prosegue_se_un_ticker_fallisce(monkeypatch: pytest.MonkeyPatch)
 
     assert result.exit_code == 0
     assert "ENSC" in result.output
-    assert "Non analizzati: ROTTO" in result.output
+    assert "Not analysed: ROTTO" in result.output
 
 
 def test_compare_fallisce_se_nessun_ticker_riesce(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -306,7 +306,7 @@ def test_compare_fallisce_se_nessun_ticker_riesce(monkeypatch: pytest.MonkeyPatc
     result = runner.invoke(app, ["compare", "AAA", "BBB", "--no-save"])
 
     assert result.exit_code == 1
-    assert "Nessun ticker analizzato" in result.output
+    assert "No ticker could be analysed" in result.output
 
 
 # --- screen e version --------------------------------------------------------------
@@ -387,7 +387,7 @@ def test_screen_segnala_le_candidate_eccezionali(monkeypatch: pytest.MonkeyPatch
 
     result = runner.invoke(app, ["screen"])
 
-    assert "eccezione" in result.output
+    assert "exception" in result.output
 
 
 def test_screen_senza_risultati_suggerisce_come_allargare(
@@ -398,8 +398,8 @@ def test_screen_senza_risultati_suggerisce_come_allargare(
     result = runner.invoke(app, ["screen"])
 
     assert result.exit_code == 0
-    assert "Nessun titolo soddisfa i criteri" in result.output
-    assert "allargare" in result.output
+    assert "No stock meets the criteria" in result.output
+    assert "widening" in result.output
 
 
 def test_screen_salva_il_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

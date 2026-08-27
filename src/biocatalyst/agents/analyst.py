@@ -17,6 +17,7 @@ from biocatalyst.agents.base import KEY_ANALYSIS, KEY_RAW_DATA, BaseAgent, appen
 from biocatalyst.agents.prompts import ANALYST_SYSTEM
 from biocatalyst.analysis import catalysts_from_trials, compute_financial_metrics
 from biocatalyst.analysis.catalysts import is_event_driven, materiality, overdue_days
+from biocatalyst.i18n import t
 from biocatalyst.llm.base import BaseLLMProvider, LLMError, Message
 from biocatalyst.llm.structured import complete_structured
 from biocatalyst.log import get_logger
@@ -38,7 +39,7 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
     def __init__(
         self,
         provider: BaseLLMProvider,
-        language: ReportLanguage = "it",
+        language: ReportLanguage = "en",
         max_tokens: int = 8_000,
     ) -> None:
         self.provider = provider
@@ -53,15 +54,13 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             raw.quarterly_financials,
             market_data=raw.market_data,
             filing_signals=raw.filing_signals,
+            language=self.language,
         )
         notes.extend(metric_notes)
 
-        catalysts = catalysts_from_trials(raw.clinical_trials)
+        catalysts = catalysts_from_trials(raw.clinical_trials, language=self.language)
         if not catalysts:
-            notes.append(
-                "nessun catalizzatore futuro identificato dai trial registrati "
-                "(nessuno studio attivo con data di completamento primario futura)"
-            )
+            notes.append(t(self.language, "cat.none_found"))
 
         lead_trial = _lead_trial(raw, catalysts)
 
@@ -75,9 +74,7 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
                 clinical_assessment = assessment.clinical
                 tam = assessment.tam
         else:
-            notes.append(
-                "valutazione clinica e TAM non prodotti: nessuno studio di riferimento disponibile"
-            )
+            notes.append(t(self.language, "agent.no_lead_trial"))
 
         bundle = AnalysisBundle(
             metrics=metrics,
@@ -118,7 +115,7 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             )
         except LLMError as exc:
             logger.warning("valutazione_analista_fallita", errore=str(exc)[:300])
-            notes.append(f"valutazione clinica e stima del TAM non prodotte: {exc}")
+            notes.append(t(self.language, "agent.assessment_failed", error=exc))
             return None
 
 

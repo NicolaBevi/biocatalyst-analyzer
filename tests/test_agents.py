@@ -255,7 +255,7 @@ def test_data_collector_registra_le_fonti_fallite_senza_interrompersi() -> None:
     raw: CompanyRawData = context[KEY_RAW_DATA]
     assert raw.ticker == "ENSC"  # normalizzato in maiuscolo
     assert raw.market_data is None
-    assert any("dati di mercato" in m for m in raw.missing_data)
+    assert any("market data" in m for m in raw.missing_data)
     assert any("Yahoo non risponde" in m for m in raw.missing_data)
 
 
@@ -277,7 +277,7 @@ def test_data_collector_salta_trial_e_fda_senza_ragione_sociale() -> None:
     context = DataCollectorAgent(providers).run({KEY_TICKER: "ENSC"})
 
     providers.clinical_trials.get_trials_by_sponsor.assert_not_called()
-    assert any("senza la ragione sociale" in m for m in context[KEY_RAW_DATA].missing_data)
+    assert any("without the company name" in m for m in context[KEY_RAW_DATA].missing_data)
 
 
 # --- ClinicalFinancialAnalystAgent --------------------------------------------
@@ -337,7 +337,7 @@ def test_analista_sopravvive_al_fallimento_dell_llm() -> None:
     assert bundle.metrics.quarterly_burn_rate_usd is not None
     assert bundle.clinical_assessment is None
     assert bundle.tam is None
-    assert any("non prodotte" in n for n in bundle.notes)
+    assert any("not produced" in n for n in bundle.notes)
 
 
 def test_analista_senza_trial_non_chiama_l_llm() -> None:
@@ -347,7 +347,7 @@ def test_analista_senza_trial_non_chiama_l_llm() -> None:
     )
 
     assert provider.calls == []
-    assert any("nessuno studio di riferimento" in n for n in context[KEY_ANALYSIS].notes)
+    assert any("no reference study" in n for n in context[KEY_ANALYSIS].notes)
 
 
 # --- MarketNewsAgent ----------------------------------------------------------
@@ -392,8 +392,8 @@ def test_market_news_degrada_se_l_llm_fallisce() -> None:
 
     context = MarketNewsAgent(provider, providers).run({KEY_RAW_DATA: _raw_data()})
 
-    assert "non disponibile" in context["market_context"].macro_notes
-    assert any("contesto di mercato" in m for m in context[KEY_MISSING_DATA])
+    assert "unavailable" in context["market_context"].macro_notes
+    assert any("market context" in m for m in context[KEY_MISSING_DATA])
 
 
 # --- ReportWriterAgent --------------------------------------------------------
@@ -470,8 +470,8 @@ def test_writer_usa_un_segnaposto_esplicito_se_manca_il_tam() -> None:
     )
 
     tam = context[KEY_REPORT].tam
-    assert tam.indication == "non determinata"
-    assert "non prodotta" in tam.methodology_notes
+    assert tam.indication == "not determined"
+    assert "not produced" in tam.methodology_notes
 
 
 def test_writer_fallisce_esplicitamente_senza_prezzo() -> None:

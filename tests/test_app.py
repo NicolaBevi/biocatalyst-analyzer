@@ -13,8 +13,8 @@ from typing import Any
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from biocatalyst.app import StatoAnalisi, _avvia_analisi
-from biocatalyst.models.analysis import FinancialMetrics, TAMEstimate
+from biocatalyst.app import Job, _start_analysis
+from biocatalyst.models.analysis import Catalyst, FinancialMetrics, TAMEstimate
 from biocatalyst.models.raw_data import MarketData
 from biocatalyst.models.report import (
     AcquisitionAssessment,
@@ -26,6 +26,7 @@ from biocatalyst.models.report import (
     ScenarioAnalysis,
     SourceQuality,
 )
+from biocatalyst.models.screening import ScreenCandidate, ScreenCriteria, ScreenResult
 
 #: I percorsi relativi sono risolti rispetto al file che chiama AppTest.
 APP = str(Path(__file__).parent.parent / "src" / "biocatalyst" / "app.py")
@@ -39,11 +40,11 @@ def _report(**overrides: Any) -> Report:
         "generated_at": datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
         "current_price": 0.403,
         "rating": "SELL",
-        "main_catalyst": "Fase 1 PF614",
+        "main_catalyst": "Phase 1 PF614",
         "sections": ReportSections(
-            pipeline_and_clinical_results="Panoramica pipeline.",
-            catalyst_analysis="Analisi catalizzatore.",
-            operational_strategy="Strategia.",
+            pipeline_and_clinical_results="Pipeline overview.",
+            catalyst_analysis="Catalyst analysis.",
+            operational_strategy="Strategy.",
         ),
         "financial_metrics": FinancialMetrics(
             cash_runway_months=0.64,
@@ -55,13 +56,13 @@ def _report(**overrides: Any) -> Report:
         "catalysts": [],
         "scenarios": ScenarioAnalysis(
             bull=Scenario(
-                probability=0.1, target_price=0.75, target_price_change_pct=86.1, conditions="su"
+                probability=0.1, target_price=0.75, target_price_change_pct=86.1, conditions="up"
             ),
             base=Scenario(
-                probability=0.4, target_price=0.35, target_price_change_pct=-13.2, conditions="="
+                probability=0.4, target_price=0.35, target_price_change_pct=-13.2, conditions="flat"
             ),
             bear=Scenario(
-                probability=0.5, target_price=0.15, target_price_change_pct=-62.8, conditions="giu"
+                probability=0.5, target_price=0.15, target_price_change_pct=-62.8, conditions="down"
             ),
         ),
         "expected_value": ExpectedValueAnalysis(
@@ -76,10 +77,10 @@ def _report(**overrides: Any) -> Report:
         ),
         "acquisition": AcquisitionAssessment(probability_pct=5.0),
         "tam": TAMEstimate(
-            indication="non determinata",
-            prevalence_estimate="n/d",
-            pricing_comparable="n/d",
-            methodology_notes="non prodotta",
+            indication="not determined",
+            prevalence_estimate="n/a",
+            pricing_comparable="n/a",
+            methodology_notes="not produced",
         ),
         "source_quality": SourceQuality(),
     }
@@ -87,66 +88,97 @@ def _report(**overrides: Any) -> Report:
     return Report(**defaults)
 
 
-# --- Thread di lavoro ------------------------------------------------------------
+def _screen_result(**overrides: Any) -> ScreenResult:
+    candidate = ScreenCandidate(
+        ticker="AAA",
+        company_name="Alpha Bio",
+        sector="Biotechnology",
+        price=5.0,
+        market_cap_usd=100_000_000,
+        main_drug="Study X",
+        indication="Oncology",
+        catalyst=Catalyst(
+            name="Phase 3",
+            catalyst_type="clinical_readout",
+            expected_date=date(2026, 12, 1),
+            source="ClinicalTrials.gov NCT1",
+            imminence_rank=1,
+        ),
+        cash_runway_months=4.0,
+        financing_risk="Cash covers 4.0 months against the 12.0 remaining.",
+        attractiveness_score=80.0,
+        rationale="Test rationale.",
+        key_risks=["First risk"],
+    )
+    defaults: dict[str, Any] = {
+        "criteria": ScreenCriteria(),
+        "candidates": [candidate],
+        "generated_at": datetime(2026, 8, 26, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return ScreenResult(**defaults)
 
 
-def _attendi(stato: StatoAnalisi, secondi: float = 5.0) -> None:
-    scadenza = time.monotonic() + secondi
-    while not stato.conclusa and time.monotonic() < scadenza:
+class _FakeProviders:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _wait(job: Job, seconds: float = 5.0) -> None:
+    deadline = time.monotonic() + seconds
+    while not job.done and time.monotonic() < deadline:
         time.sleep(0.02)
+
+
+# --- Thread di lavoro ------------------------------------------------------------
 
 
 def test_l_analisi_gira_in_un_thread_e_aggiorna_lo_stato(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """La pipeline non deve bloccare il ciclo di rendering della pagina."""
-    monkeypatch.setattr("biocatalyst.app.build_data_providers", lambda s: _ProvidersFinti())
+    monkeypatch.setattr("biocatalyst.app.build_data_providers", lambda s: _FakeProviders())
 
-    def analisi(ticker: str, **kwargs: Any) -> Report:
+    def analysis(ticker: str, **kwargs: Any) -> Report:
         kwargs["on_progress"](3, 4, "MarketNews")
         return _report()
 
-    monkeypatch.setattr("biocatalyst.app.run_analysis", analisi)
+    monkeypatch.setattr("biocatalyst.app.run_analysis", analysis)
 
-    stato = _avvia_analisi("ensc", "it", object())  # type: ignore[arg-type]
-    assert stato.ticker == "ENSC"  # normalizzato subito, senza attendere il thread
-    _attendi(stato)
+    job = _start_analysis("ensc", "en", object())  # type: ignore[arg-type]
+    assert job.label == "ENSC"  # normalizzato subito, senza attendere il thread
+    _wait(job)
 
-    assert stato.conclusa is True
-    assert stato.errore is None
-    assert stato.report is not None
-    assert stato.indice == 3
-    assert stato.fase == "MarketNews"
+    assert job.done is True
+    assert job.error is None
+    assert isinstance(job.result, Report)
+    assert job.step == 3
+    assert job.stage == "MarketNews"
 
 
 def test_un_errore_nella_pipeline_non_uccide_la_pagina(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    providers = _ProvidersFinti()
+    providers = _FakeProviders()
     monkeypatch.setattr("biocatalyst.app.build_data_providers", lambda s: providers)
 
-    def esplode(ticker: str, **kwargs: Any) -> Report:
-        raise RuntimeError("fonte irraggiungibile")
+    def boom(ticker: str, **kwargs: Any) -> Report:
+        raise RuntimeError("source unreachable")
 
-    monkeypatch.setattr("biocatalyst.app.run_analysis", esplode)
+    monkeypatch.setattr("biocatalyst.app.run_analysis", boom)
 
-    stato = _avvia_analisi("ENSC", "it", object())  # type: ignore[arg-type]
-    _attendi(stato)
+    job = _start_analysis("ENSC", "en", object())  # type: ignore[arg-type]
+    _wait(job)
 
-    assert stato.conclusa is True
-    assert stato.report is None
-    assert stato.errore is not None
-    assert "fonte irraggiungibile" in stato.errore
+    assert job.done is True
+    assert job.result is None
+    assert job.error is not None
+    assert "source unreachable" in job.error
     # I provider vengono chiusi anche in caso di errore.
-    assert providers.chiuso is True
-
-
-class _ProvidersFinti:
-    def __init__(self) -> None:
-        self.chiuso = False
-
-    def close(self) -> None:
-        self.chiuso = True
+    assert providers.closed is True
 
 
 # --- Rendering della pagina ------------------------------------------------------
@@ -157,77 +189,98 @@ def _app(monkeypatch: pytest.MonkeyPatch) -> AppTest:
     return AppTest.from_file(APP, default_timeout=30)
 
 
-def test_pagina_iniziale_spiega_cosa_fare(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l_interfaccia_e_in_inglese(monkeypatch: pytest.MonkeyPatch) -> None:
     at = _app(monkeypatch).run()
 
     assert not at.exception
-    assert any("Inserisci un ticker" in i.value for i in at.info)
-    # Il pulsante è presente e attivo con il ticker di default.
-    assert at.button[0].label == "Analizza"
+    assert any("Enter a ticker" in i.value for i in at.info)
+    etichette = [b.label for b in at.button]
+    assert "Analyse" in etichette
+    assert at.sidebar.radio[0].label == "Report language"
 
 
-def test_barra_laterale_espone_ticker_e_lingua(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l_inglese_e_la_lingua_predefinita(monkeypatch: pytest.MonkeyPatch) -> None:
+    at = _app(monkeypatch).run()
+    assert at.sidebar.radio[0].value == "en"
+
+
+def test_ci_sono_entrambe_le_schede(monkeypatch: pytest.MonkeyPatch) -> None:
+    """L'analisi di un ticker e lo screening sono due modalità distinte."""
     at = _app(monkeypatch).run()
 
     assert not at.exception
-    assert at.sidebar.text_input[0].value == "ENSC"
-    # `options` restituisce le etichette mostrate, non i valori grezzi.
-    assert at.sidebar.radio[0].options == ["Italiano", "English"]
+    assert any("Run screen" in b.label for b in at.button)
 
 
 def test_report_concluso_mostra_metriche_ed_esportazioni(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     at = _app(monkeypatch)
-    at.session_state["analisi"] = StatoAnalisi(
-        ticker="ENSC", lingua="it", conclusa=True, report=_report()
-    )
+    at.session_state["analysis_job"] = Job(label="ENSC", done=True, result=_report())
     at.run()
 
     assert not at.exception
     etichette = [m.label for m in at.metric]
-    assert "Autonomia di cassa" in etichette
-    assert "Rischio diluizione" in etichette
-    # Tre pulsanti di scaricamento: Markdown, JSON, PDF.
-    assert len(at.download_button) >= 2
+    assert "Cash runway" in etichette
+    assert "Dilution risk" in etichette
     assert any("Markdown" in b.label for b in at.download_button)
 
 
 def test_gli_avvisi_sui_dati_sono_visibili(monkeypatch: pytest.MonkeyPatch) -> None:
     at = _app(monkeypatch)
-    at.session_state["analisi"] = StatoAnalisi(
-        ticker="ENSC",
-        lingua="it",
-        conclusa=True,
-        report=_report(
-            source_quality=SourceQuality(warnings=["Target analisti 20 volte il prezzo"])
+    at.session_state["analysis_job"] = Job(
+        label="ENSC",
+        done=True,
+        result=_report(
+            source_quality=SourceQuality(warnings=["Mean analyst target is 20x the price"])
         ),
     )
     at.run()
 
     assert not at.exception
-    assert any("20 volte il prezzo" in w.value for w in at.warning)
+    assert any("20x the price" in w.value for w in at.warning)
 
 
 def test_un_errore_viene_mostrato_all_utente(monkeypatch: pytest.MonkeyPatch) -> None:
     at = _app(monkeypatch)
-    at.session_state["analisi"] = StatoAnalisi(
-        ticker="ENSC", lingua="it", conclusa=True, errore="DataUnavailableError: SEC non risponde"
+    at.session_state["analysis_job"] = Job(
+        label="ENSC", done=True, error="DataUnavailableError: SEC not responding"
     )
     at.run()
 
     assert not at.exception
-    assert any("SEC non risponde" in e.value for e in at.error)
+    assert any("SEC not responding" in e.value for e in at.error)
 
 
-def test_analisi_in_corso_mostra_l_avanzamento(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_i_risultati_dello_screening_sono_visibili(monkeypatch: pytest.MonkeyPatch) -> None:
     at = _app(monkeypatch)
-    at.session_state["analisi"] = StatoAnalisi(
-        ticker="ENSC", lingua="it", indice=2, fase="ClinicalFinancialAnalyst"
+    at.session_state["screen_job"] = Job(label="screening", done=True, result=_screen_result())
+    at.run()
+
+    assert not at.exception
+    assert any("1 candidates found" in s.value for s in at.success)
+    # Il rischio di rifinanziamento resta visibile accanto alla candidata.
+    assert any("Cash covers 4.0 months" in w.value for w in at.warning)
+
+
+def test_screening_senza_risultati_suggerisce_come_allargare(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    at = _app(monkeypatch)
+    at.session_state["screen_job"] = Job(
+        label="screening", done=True, result=_screen_result(candidates=[])
     )
     at.run()
 
     assert not at.exception
-    # Nessun report mostrato mentre l'analisi è in corso.
+    assert any("widening the catalyst window" in w.value for w in at.warning)
+
+
+def test_analisi_in_corso_non_mostra_il_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    at = _app(monkeypatch)
+    at.session_state["analysis_job"] = Job(label="ENSC", step=2, stage="Analyst")
+    at.run()
+
+    assert not at.exception
     assert not at.metric
     assert not at.download_button

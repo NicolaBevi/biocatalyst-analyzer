@@ -166,7 +166,7 @@ def test_avvisi_includono_l_arretratezza_dello_short_interest() -> None:
         analyst_target=1.0, current_price=1.0, short_interest_days_old=12
     )
     assert len(avvisi) == 1
-    assert "12 giorni fa" in avvisi[0]
+    assert "12 days old" in avvisi[0]
     assert "FINRA" in avvisi[0]
 
 
@@ -345,3 +345,52 @@ def test_le_due_lingue_hanno_le_stesse_chiavi() -> None:
     """Una chiave presente solo in una lingua produrrebbe testo non tradotto."""
     assert set(LABELS["it"]) == set(LABELS["en"])
     assert set(EXPLANATIONS["it"]) == set(EXPLANATIONS["en"])
+
+
+# --- Localizzazione dei testi generati dal codice ---------------------------------
+
+
+def test_ogni_messaggio_esiste_in_entrambe_le_lingue() -> None:
+    """Una traduzione dimenticata comparirebbe nel report nella lingua sbagliata."""
+    from biocatalyst.i18n import MESSAGES
+
+    mancanti = [k for k, v in MESSAGES.items() if set(v) != {"en", "it"}]
+    assert mancanti == []
+
+
+def test_i_segnaposto_di_formattazione_coincidono_fra_le_lingue() -> None:
+    """Un segnaposto presente solo in una lingua farebbe fallire .format()."""
+    import re
+
+    from biocatalyst.i18n import MESSAGES
+
+    for chiave, voci in MESSAGES.items():
+        campi = {lingua: set(re.findall(r"\{(\w+)", testo)) for lingua, testo in voci.items()}
+        assert campi["en"] == campi["it"], f"segnaposto diversi in '{chiave}': {campi}"
+
+
+def test_le_note_delle_metriche_seguono_la_lingua() -> None:
+    from biocatalyst.analysis import compute_financial_metrics
+
+    _, note_en = compute_financial_metrics([], language="en")
+    _, note_it = compute_financial_metrics([], language="it")
+
+    assert any("cash not available" in n for n in note_en)
+    assert any("cassa non disponibile" in n for n in note_it)
+    # Nessun residuo dell'altra lingua.
+    assert not any("cassa" in n for n in note_en)
+
+
+def test_gli_avvisi_seguono_la_lingua() -> None:
+    avviso_en = check_analyst_target(8.25, 0.403, "en")
+    avviso_it = check_analyst_target(8.25, 0.403, "it")
+
+    assert avviso_en is not None and "times the current price" in avviso_en
+    assert avviso_it is not None and "volte il prezzo" in avviso_it
+
+
+def test_la_chiave_sconosciuta_non_solleva() -> None:
+    """Un testo grezzo in pagina è meno grave di un report non generato."""
+    from biocatalyst.i18n import t
+
+    assert t("en", "chiave.inesistente") == "chiave.inesistente"

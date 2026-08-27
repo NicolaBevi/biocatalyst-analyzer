@@ -43,7 +43,7 @@ from biocatalyst.screening import (
 
 app = typer.Typer(
     name="biocatalyst",
-    help="Report di due diligence su aziende biotech/pharma NASDAQ e NYSE.",
+    help="Due diligence reports on NASDAQ and NYSE biotech and pharma companies.",
     no_args_is_help=True,
 )
 console = Console()
@@ -124,58 +124,58 @@ def _riassunto(report: Report) -> Table:
     colore = {"BUY": "green", "HOLD": "yellow", "SELL": "red"}[report.rating]
     table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
     table.add_row("Ticker", f"[bold]{report.ticker}[/bold]")
-    table.add_row("Prezzo", f"${report.current_price:,.4f}")
-    table.add_row("Giudizio", f"[{colore} bold]{report.rating}[/{colore} bold]")
+    table.add_row("Price", f"${report.current_price:,.4f}")
+    table.add_row("Rating", f"[{colore} bold]{report.rating}[/{colore} bold]")
     m = report.financial_metrics
     if m.cash_runway_months is not None:
-        table.add_row("Autonomia di cassa", f"{m.cash_runway_months:,.1f} mesi")
+        table.add_row("Cash runway", f"{m.cash_runway_months:,.1f} months")
     if m.dilution_risk_score is not None:
-        table.add_row("Rischio diluizione", f"{m.dilution_risk_score:,.0f}/100")
+        table.add_row("Dilution risk", f"{m.dilution_risk_score:,.0f}/100")
     roi = report.expected_value.rows[0]
     table.add_row(
-        f"Valore atteso su ${roi.investment_usd:,.0f}",
+        f"Expected value on ${roi.investment_usd:,.0f}",
         f"${roi.expected_value_usd:,.2f} ({roi.expected_roi_pct:+.1f}%)",
     )
-    table.add_row("Catalizzatore", report.main_catalyst[:70])
+    table.add_row("Catalyst", report.main_catalyst[:70])
     return table
 
 
 @app.command()
 def version() -> None:
-    """Mostra la versione installata."""
+    """Show the installed version."""
     console.print(f"biocatalyst-analyzer {__version__}")
 
 
 @app.command()
 def analyze(
-    ticker: Annotated[str, typer.Argument(help="Ticker da analizzare, es. ENSC")],
+    ticker: Annotated[str, typer.Argument(help="Ticker to analyse, e.g. ENSC")],
     output: Annotated[
         Path | None,
         typer.Option(
             "--output",
             "-o",
-            help="File singolo di destinazione. Se omesso salva in reports/<TICKER>/.",
+            help="Single output file. If omitted, writes to reports/<TICKER>/.",
         ),
     ] = None,
     formats: Annotated[
         str,
-        typer.Option("--formats", "-f", help="Formati separati da virgola: md,json,html,pdf"),
+        typer.Option("--formats", "-f", help="Comma-separated formats: md,json,html,pdf"),
     ] = ",".join(f.lstrip(".") for f in DEFAULT_FORMATS),
     language: Annotated[
-        str | None, typer.Option("--language", "-l", help="Lingua del report: it oppure en")
+        str | None, typer.Option("--language", "-l", help="Report language: en or it")
     ] = None,
     provider: Annotated[
         str | None,
-        typer.Option("--provider", "-p", help="Forza un provider LLM per tutti gli agenti"),
+        typer.Option("--provider", "-p", help="Force one LLM provider for every agent"),
     ] = None,
     no_cache: Annotated[
-        bool, typer.Option("--no-cache", help="Ignora la cache e reinterroga tutte le fonti")
+        bool, typer.Option("--no-cache", help="Bypass the cache and re-query every source")
     ] = False,
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra i log dettagliati degli agenti")
+        bool, typer.Option("--verbose", "-v", help="Show detailed agent logs")
     ] = False,
 ) -> None:
-    """Due diligence completa su un ticker."""
+    """Full due diligence on a single ticker."""
     # Ogni parametro va validato PRIMA di costruire i provider: un formato
     # sbagliato scoperto a valle costerebbe un'analisi completa a pagamento.
     formati = _parse_formats(formats) if output is None else ()
@@ -185,7 +185,7 @@ def analyze(
     providers = build_data_providers(settings, cache_enabled=not no_cache)
     try:
         console.print(
-            f"\n[bold]Analisi di {ticker.upper()}[/bold] (lingua: {settings.report_language})"
+            f"\n[bold]Analysing {ticker.upper()}[/bold] (language: {settings.report_language})"
         )
         report = _esegui(ticker, settings, providers, mostra_avanzamento=True)
 
@@ -196,18 +196,18 @@ def analyze(
 
         console.print()
         console.print(_riassunto(report))
-        console.print("\n[bold]File scritti:[/bold]")
+        console.print("\n[bold]Files written:[/bold]")
         for percorso in scritti:
             console.print(f"  {percorso}")
 
         if report.source_quality.warnings:
             console.print(
-                f"\n[yellow]⚠ {len(report.source_quality.warnings)} avvisi sui dati[/yellow]"
+                f"\n[yellow]⚠ {len(report.source_quality.warnings)} data quality warnings[/yellow]"
             )
             for avviso in report.source_quality.warnings:
                 console.print(f"  [yellow]•[/yellow] {avviso}")
     except (DataProviderError, LLMError, AgentError) as exc:
-        error_console.print(f"\n[red]Analisi non riuscita:[/red] {exc}")
+        error_console.print(f"\n[red]Analysis failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
     finally:
         providers.close()
@@ -215,18 +215,18 @@ def analyze(
 
 @app.command()
 def compare(
-    tickers: Annotated[list[str], typer.Argument(help="Due o più ticker da confrontare")],
+    tickers: Annotated[list[str], typer.Argument(help="Two or more tickers to compare")],
     language: Annotated[
-        str | None, typer.Option("--language", "-l", help="Lingua dei report: it oppure en")
+        str | None, typer.Option("--language", "-l", help="Report language: en or it")
     ] = None,
     provider: Annotated[
-        str | None, typer.Option("--provider", "-p", help="Forza un provider LLM")
+        str | None, typer.Option("--provider", "-p", help="Force one LLM provider")
     ] = None,
     save: Annotated[
-        bool, typer.Option("--save/--no-save", help="Salva anche i report completi")
+        bool, typer.Option("--save/--no-save", help="Also save the full reports")
     ] = True,
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra i log dettagliati degli agenti")
+        bool, typer.Option("--verbose", "-v", help="Show detailed agent logs")
     ] = False,
 ) -> None:
     """Confronta più ticker affiancandone le metriche principali.
@@ -253,30 +253,30 @@ def compare(
                 if save:
                     save_all_formats(report)
             except (DataProviderError, LLMError, AgentError) as exc:
-                console.print(f"  [red]non riuscito:[/red] {exc}")
+                console.print(f"  [red]failed:[/red] {exc}")
                 falliti.append((ticker.upper(), str(exc)))
     finally:
         providers.close()
 
     if not riusciti:
-        error_console.print("\n[red]Nessun ticker analizzato con successo.[/red]")
+        error_console.print("\n[red]No ticker could be analysed.[/red]")
         raise typer.Exit(code=1)
 
     console.print()
     console.print(_tabella_confronto(riusciti))
     if falliti:
-        console.print(f"\n[yellow]Non analizzati: {', '.join(t for t, _ in falliti)}[/yellow]")
+        console.print(f"\n[yellow]Not analysed: {', '.join(t for t, _ in falliti)}[/yellow]")
 
 
 def _tabella_confronto(reports: list[Report]) -> Table:
-    table = Table(title="Confronto", header_style="bold")
+    table = Table(title="Comparison", header_style="bold")
     table.add_column("Ticker")
-    table.add_column("Prezzo", justify="right")
-    table.add_column("Giudizio")
+    table.add_column("Price", justify="right")
+    table.add_column("Rating")
     table.add_column("Runway", justify="right")
-    table.add_column("Diluizione", justify="right")
+    table.add_column("Dilution", justify="right")
     table.add_column("Squeeze", justify="right")
-    table.add_column("ROI atteso", justify="right")
+    table.add_column("Expected ROI", justify="right")
 
     # Ordinati per rendimento atteso: il confronto serve a scegliere.
     for r in sorted(reports, key=lambda x: -x.expected_value.rows[0].expected_roi_pct):
@@ -298,13 +298,13 @@ def _tabella_confronto(reports: list[Report]) -> Table:
 @app.command()
 def screen(
     max_price: Annotated[
-        float, typer.Option("--max-price", help="Prezzo massimo per azione in dollari")
+        float, typer.Option("--max-price", help="Maximum share price in dollars")
     ] = 10.0,
     max_market_cap: Annotated[
-        float, typer.Option("--max-market-cap", help="Capitalizzazione massima in dollari")
+        float, typer.Option("--max-market-cap", help="Maximum market capitalisation in dollars")
     ] = 500_000_000,
     catalyst_window: Annotated[
-        int, typer.Option("--catalyst-window", help="Finestra dei catalizzatori in mesi")
+        int, typer.Option("--catalyst-window", help="Catalyst window in months")
     ] = 6,
     risk: Annotated[
         str,
@@ -317,13 +317,13 @@ def screen(
         ),
     ] = "bilanciato",
     min_phase: Annotated[
-        str, typer.Option("--min-phase", help="Fase minima: PHASE1, PHASE2, PHASE3")
+        str, typer.Option("--min-phase", help="Minimum phase: PHASE1, PHASE2, PHASE3")
     ] = "PHASE2",
     limit: Annotated[
-        int, typer.Option("--limit", help="Quante candidate restituire")
+        int, typer.Option("--limit", help="How many candidates to return")
     ] = DEFAULT_MAX_CANDIDATES,
     max_universe: Annotated[
-        int, typer.Option("--max-universe", help="Quanti titoli esaminare al massimo")
+        int, typer.Option("--max-universe", help="Maximum number of stocks to examine")
     ] = DEFAULT_MAX_UNIVERSE,
     include_pharma: Annotated[
         bool,
@@ -333,12 +333,12 @@ def screen(
         ),
     ] = False,
     output: Annotated[
-        Path | None, typer.Option("--output", "-o", help="Salva il risultato come JSON")
+        Path | None, typer.Option("--output", "-o", help="Save the result as JSON")
     ] = None,
     language: Annotated[
         str | None, typer.Option("--language", "-l", help="Lingua delle motivazioni: it o en")
     ] = None,
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Log dettagliati")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Detailed logs")] = False,
 ) -> None:
     """Cerca nuove opportunità fra i biotech quotati secondo criteri.
 
@@ -365,17 +365,17 @@ def screen(
     sic = (*DEFAULT_SIC_CODES, PHARMA_SIC_CODE) if include_pharma else DEFAULT_SIC_CODES
 
     console.print(
-        f"\n[bold]Ricerca opportunità[/bold] — prezzo ≤ ${max_price:,.2f}, "
-        f"capitalizzazione ≤ ${max_market_cap:,.0f}, catalizzatori entro {catalyst_window} mesi, "
-        f"profilo {appetite.name}"
+        f"\n[bold]Screening for opportunities[/bold] — price ≤ ${max_price:,.2f}, "
+        f"market cap ≤ ${max_market_cap:,.0f}, catalysts within {catalyst_window} months, "
+        f"{appetite.name} profile"
     )
-    with console.status("[dim]costruzione dell'universo…[/dim]") as stato:
+    with console.status("[dim]building the universe…[/dim]") as stato:
 
         def avanzamento(fase: str, fatto: int, totale: int) -> None:
             if fase == "titoli":
-                stato.update(f"[dim]esame titoli {fatto}/{totale}…[/dim]")
+                stato.update(f"[dim]examining stocks {fatto}/{totale}…[/dim]")
             elif fase == "motivazioni":
-                stato.update("[dim]analisi delle finaliste…[/dim]")
+                stato.update("[dim]analysing the finalists…[/dim]")
 
         try:
             risultato = run_screen(
@@ -389,13 +389,13 @@ def screen(
                 on_progress=avanzamento,
             )
         except (DataProviderError, LLMError) as exc:
-            error_console.print(f"\n[red]Ricerca non riuscita:[/red] {exc}")
+            error_console.print(f"\n[red]Screening failed:[/red] {exc}")
             raise typer.Exit(code=1) from exc
 
     if not risultato.candidates:
         console.print(
-            "\n[yellow]Nessun titolo soddisfa i criteri.[/yellow] "
-            "Prova ad allargare la finestra dei catalizzatori o le soglie di prezzo."
+            "\n[yellow]No stock meets the criteria.[/yellow] "
+            "Try widening the catalyst window or the price thresholds."
         )
         raise typer.Exit(code=0)
 
@@ -404,29 +404,31 @@ def screen(
     for candidata in risultato.candidates:
         console.print(f"\n[bold]{candidata.ticker}[/bold] — {candidata.company_name}")
         if candidata.exceptional:
-            console.print("  [yellow]oltre le soglie ordinarie, incluso come eccezione[/yellow]")
+            console.print(
+                "  [yellow]above the ordinary thresholds, included as an exception[/yellow]"
+            )
         if candidata.financing_risk:
             console.print(f"  [yellow]⚠ {candidata.financing_risk}[/yellow]")
         if candidata.rationale:
             console.print(f"  {candidata.rationale}")
         for rischio in candidata.key_risks:
-            console.print(f"  [dim]rischio:[/dim] {rischio}")
+            console.print(f"  [dim]risk:[/dim] {rischio}")
 
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(risultato.model_dump_json(indent=2, exclude_none=False), encoding="utf-8")
-        console.print(f"\n[bold]Salvato:[/bold] {output}")
+        console.print(f"\n[bold]Saved:[/bold] {output}")
 
 
 def _tabella_screen(risultato: ScreenResult) -> Table:
-    table = Table(title=f"{len(risultato.candidates)} candidate", header_style="bold")
+    table = Table(title=f"{len(risultato.candidates)} candidates", header_style="bold")
     table.add_column("Ticker")
-    table.add_column("Prezzo", justify="right")
-    table.add_column("Cap.", justify="right")
-    table.add_column("Catalizzatore")
+    table.add_column("Price", justify="right")
+    table.add_column("Mkt cap", justify="right")
+    table.add_column("Catalyst")
     table.add_column("Runway", justify="right")
-    table.add_column("Punteggio", justify="right")
-    table.add_column("Cassa")
+    table.add_column("Score", justify="right")
+    table.add_column("Cash")
 
     for c in risultato.candidates:
         data = c.catalyst.expected_date or c.catalyst.expected_date_window
@@ -437,7 +439,7 @@ def _tabella_screen(risultato: ScreenResult) -> Table:
             str(data),
             f"{c.cash_runway_months:,.1f}m" if c.cash_runway_months is not None else "—",
             f"{c.attractiveness_score:,.0f}",
-            "[yellow]da rifinanziare[/yellow]" if c.financing_risk else "sufficiente",
+            "[yellow]needs refinancing[/yellow]" if c.financing_risk else "sufficient",
         )
     return table
 

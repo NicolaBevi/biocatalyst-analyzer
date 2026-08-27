@@ -20,7 +20,7 @@ Rating = Literal["BUY", "HOLD", "SELL"]
 
 #: Lingua del report, scelta dall'utente. Riguarda solo i testi prodotti:
 #: i dati numerici e le fonti restano identici.
-ReportLanguage = Literal["it", "en"]
+ReportLanguage = Literal["en", "it"]
 
 DEFAULT_DISCLAIMER = (
     "Questo report ha finalità puramente informative. È generato in parte da "
@@ -111,7 +111,7 @@ class Report(BaseModel):
     #: `report_date`: un report rigenerato da cache può avere dati più vecchi
     #: della data di redazione, e il lettore deve poterlo vedere.
     generated_at: datetime
-    language: ReportLanguage = "it"
+    language: ReportLanguage = "en"
     current_price: float = Field(gt=0)
     rating: Rating
     average_analyst_target: float | None = Field(default=None, gt=0)

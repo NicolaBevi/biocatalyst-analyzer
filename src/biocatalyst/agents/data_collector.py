@@ -13,8 +13,10 @@ from typing import Any, ClassVar
 from biocatalyst.agents.base import KEY_RAW_DATA, KEY_TICKER, BaseAgent, append_missing
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
+from biocatalyst.i18n import t
 from biocatalyst.log import get_logger
 from biocatalyst.models.raw_data import CompanyRawData
+from biocatalyst.models.report import ReportLanguage
 
 logger = get_logger(__name__)
 
@@ -23,8 +25,9 @@ class DataCollectorAgent(BaseAgent):
     name: ClassVar[str] = "DataCollector"
     requires: ClassVar[tuple[str, ...]] = (KEY_TICKER,)
 
-    def __init__(self, providers: DataProviders) -> None:
+    def __init__(self, providers: DataProviders, language: ReportLanguage = "en") -> None:
         self.providers = providers
+        self.language = language
 
     def _run(self, context: dict[str, Any]) -> dict[str, Any]:
         ticker: str = context[KEY_TICKER]
@@ -34,23 +37,27 @@ class DataCollectorAgent(BaseAgent):
         # Il nome ufficiale SEC serve a interrogare ClinicalTrials.gov e openFDA,
         # che indicizzano per ragione sociale e non per ticker.
         company_name = collect_safely(
-            "nome società (SEC)", lambda: p.sec.get_company_name(ticker), missing
+            t(self.language, "src.company_name_sec"),
+            lambda: p.sec.get_company_name(ticker),
+            missing,
         )
         if company_name is None:
             company_name = collect_safely(
-                "nome società (yfinance)", lambda: p.market.get_company_name(ticker), missing
+                t(self.language, "src.company_name_yf"),
+                lambda: p.market.get_company_name(ticker),
+                missing,
             )
 
         market_data = collect_safely(
-            "dati di mercato (yfinance)", lambda: p.market.get_market_data(ticker), missing
+            t(self.language, "src.market_data"), lambda: p.market.get_market_data(ticker), missing
         )
         financials = collect_safely(
-            "bilanci trimestrali (SEC XBRL)",
+            t(self.language, "src.financials"),
             lambda: p.sec.get_quarterly_financials(ticker),
             missing,
         )
         filing_signals = collect_safely(
-            "segnali ATM/warrant (ricerca full-text SEC)",
+            t(self.language, "src.filing_signals"),
             lambda: p.sec.get_filing_signals(ticker),
             missing,
         )
@@ -60,19 +67,17 @@ class DataCollectorAgent(BaseAgent):
         if company_name:
             sponsor = _sponsor_query(company_name)
             trials = collect_safely(
-                "trial clinici (ClinicalTrials.gov)",
+                t(self.language, "src.trials"),
                 lambda: p.clinical_trials.get_trials_by_sponsor(sponsor),
                 missing,
             )
             approvals = collect_safely(
-                "approvazioni farmaci (openFDA)",
+                t(self.language, "src.approvals"),
                 lambda: p.fda.get_approvals_by_sponsor(company_name),
                 missing,
             )
         else:
-            missing.append(
-                "trial clinici e approvazioni FDA: non interrogabili senza la ragione sociale"
-            )
+            missing.append(t(self.language, "collect.no_company_name"))
 
         raw = CompanyRawData(
             ticker=ticker.upper(),

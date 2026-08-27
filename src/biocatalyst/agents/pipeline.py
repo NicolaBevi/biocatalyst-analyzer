@@ -31,7 +31,7 @@ def build_pipeline(
     settings = settings or get_settings()
     language = language or settings.report_language
     return [
-        DataCollectorAgent(providers),
+        DataCollectorAgent(providers, language),
         ClinicalFinancialAnalystAgent(provider_for_agent("analyst", settings), language),
         MarketNewsAgent(provider_for_agent("news", settings), providers, language),
         ReportWriterAgent(provider_for_agent("writer", settings), providers, language),

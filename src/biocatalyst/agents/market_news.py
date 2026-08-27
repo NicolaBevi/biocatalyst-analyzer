@@ -19,6 +19,7 @@ from biocatalyst.agents.base import (
 from biocatalyst.agents.prompts import MARKET_SYSTEM
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
+from biocatalyst.i18n import t
 from biocatalyst.llm.base import BaseLLMProvider, LLMError, Message
 from biocatalyst.llm.structured import complete_structured
 from biocatalyst.log import get_logger
@@ -37,7 +38,7 @@ class MarketNewsAgent(BaseAgent):
         self,
         provider: BaseLLMProvider,
         providers: DataProviders,
-        language: ReportLanguage = "it",
+        language: ReportLanguage = "en",
         max_tokens: int = 8_000,
         news_days: int = 30,
         sentiment_days: int = 30,
@@ -54,12 +55,12 @@ class MarketNewsAgent(BaseAgent):
         missing: list[str] = []
 
         news = collect_safely(
-            "notizie sul titolo (Finnhub)",
+            t(self.language, "src.news"),
             lambda: self.providers.news.get_company_news(raw.ticker, days_back=self.news_days),
             missing,
         )
         sentiment = collect_safely(
-            "andamento ETF di settore (XBI/IBB)",
+            t(self.language, "src.sector_etf"),
             lambda: self.providers.market.get_sector_sentiment(self.sentiment_days),
             missing,
         )
@@ -104,10 +105,10 @@ class MarketNewsAgent(BaseAgent):
             )
         except LLMError as exc:
             logger.warning("contesto_mercato_fallito", errore=str(exc)[:300])
-            missing.append(f"analisi del contesto di mercato non prodotta: {exc}")
+            missing.append(t(self.language, "agent.market_failed", error=exc))
             return MarketContext(
                 sector_sentiment=sentiment,
-                macro_notes="Contesto di mercato non disponibile: la sintesi non è stata prodotta.",
+                macro_notes=t(self.language, "agent.market_unavailable"),
             )
 
         # Il sentiment è un dato misurato, non una deduzione del modello:

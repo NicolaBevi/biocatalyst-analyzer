@@ -39,6 +39,7 @@ from biocatalyst.config import Settings, get_settings
 from biocatalyst.data.base import DataProviderError
 from biocatalyst.data.factory import DataProviders, build_data_providers
 from biocatalyst.data.universe import DEFAULT_SIC_CODES, UniverseProvider
+from biocatalyst.i18n import t
 from biocatalyst.llm.base import LLMError, Message
 from biocatalyst.llm.factory import provider_for_agent
 from biocatalyst.llm.structured import complete_structured
@@ -125,7 +126,7 @@ def screen(
         tickers = sorted(universo)[:max_universe]
         logger.info("screen_universo", totale=len(universo), esaminati=len(tickers))
 
-        selezionate = _filtra(tickers, universo, criteria, providers, avanza, appetite)
+        selezionate = _filtra(tickers, universo, criteria, providers, avanza, appetite, language)
         selezionate.sort(key=lambda c: -c.attractiveness_score)
         finaliste = selezionate[:max_candidates]
 
@@ -150,6 +151,7 @@ def _filtra(
     providers: DataProviders,
     avanza: Callable[[str, int, int], None],
     appetite: RiskAppetite,
+    language: ReportLanguage = "en",
 ) -> list[ScreenCandidate]:
     candidate: list[ScreenCandidate] = []
     totale = len(tickers)
@@ -157,7 +159,9 @@ def _filtra(
     for indice, ticker in enumerate(tickers, start=1):
         avanza("titoli", indice, totale)
         try:
-            candidato = _valuta_titolo(ticker, universo[ticker], criteria, providers, appetite)
+            candidato = _valuta_titolo(
+                ticker, universo[ticker], criteria, providers, appetite, language
+            )
         except DataProviderError as exc:
             # Un titolo che non risponde non deve fermare la ricerca sugli altri.
             logger.debug("titolo_saltato", ticker=ticker, motivo=str(exc)[:120])
@@ -175,6 +179,7 @@ def _valuta_titolo(
     criteria: ScreenCriteria,
     providers: DataProviders,
     appetite: RiskAppetite,
+    language: ReportLanguage = "en",
 ) -> ScreenCandidate | None:
     # Stadio 2: prezzo e capitalizzazione, il filtro più economico.
     market = providers.market.get_market_data(ticker)
@@ -185,7 +190,9 @@ def _valuta_titolo(
     # Stadio 3: serve un catalizzatore entro la finestra richiesta.
     sponsor = company_name.split(",")[0].strip()
     trials = providers.clinical_trials.get_trials_by_sponsor(sponsor)
-    catalizzatori = catalysts_from_trials(trials, window_months=criteria.catalyst_window_months)
+    catalizzatori = catalysts_from_trials(
+        trials, window_months=criteria.catalyst_window_months, language=language
+    )
     if not catalizzatori:
         return None
 
@@ -211,17 +218,21 @@ def _valuta_titolo(
     return ScreenCandidate(
         ticker=ticker,
         company_name=company_name,
-        sector="Biotecnologie",
+        sector=t(language, "screen.sector"),
         price=market.price,
         market_cap_usd=market.market_cap_usd,
-        main_drug=trial.brief_title if trial else "non determinato",
-        indication=", ".join(trial.condition) if trial and trial.condition else "non determinata",
+        main_drug=trial.brief_title if trial else t(language, "screen.drug_unknown"),
+        indication=(
+            ", ".join(trial.condition)
+            if trial and trial.condition
+            else t(language, "screen.indication_unknown")
+        ),
         catalyst=catalizzatore,
         float_shares=market.float_shares,
         short_percent_of_float=market.short_percent_of_float,
         days_to_cover=market.short_ratio_days,
         cash_runway_months=runway,
-        financing_risk=financing_risk_note(runway, catalizzatore),
+        financing_risk=financing_risk_note(runway, catalizzatore, language=language),
         attractiveness_score=punteggio,
         exceptional=esito.exceptional,
     )
@@ -290,21 +301,18 @@ def _aggiungi_motivazioni(
     except LLMError as exc:
         logger.warning("motivazioni_screen_fallite", errore=str(exc)[:300])
         for c in candidate:
-            c.rationale = (
-                "Motivazione non prodotta: la chiamata al modello non è riuscita. "
-                "I dati quantitativi restano validi."
-            )
+            c.rationale = t(language, "screen.rationale_failed")
         return
 
     per_ticker: dict[str, CandidateNarrative] = {n.ticker.upper(): n for n in risposta.candidates}
     for c in candidate:
         narrativa = per_ticker.get(c.ticker.upper())
         if narrativa is None:
-            c.rationale = "Motivazione non fornita dal modello per questo titolo."
+            c.rationale = t(language, "screen.rationale_missing")
             continue
         c.rationale = narrativa.rationale
         c.key_risks = narrativa.key_risks
-        if narrativa.indication and c.indication == "non determinata":
+        if narrativa.indication and c.indication == t(language, "screen.indication_unknown"):
             c.indication = narrativa.indication
 
 

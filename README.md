@@ -45,7 +45,9 @@ EXPECTED VALUE
 The full report covers the clinical pipeline, an analysis of the main
 catalyst, three probability-weighted scenarios, acquisition likelihood, a
 trading strategy, and an explicit list of the data it could **not** retrieve.
-Exportable to Markdown, JSON, HTML and PDF, in **Italian or English**.
+Exportable to Markdown, JSON, HTML and PDF, in **English or Italian**. Every
+string the code itself produces — source labels, metric notes, warnings — is
+localised too, so an English report contains no Italian leftovers.
 
 ---
 
@@ -106,7 +108,7 @@ git clone <repo-url> && cd biocatalyst-analyzer
 uv sync
 
 cp .env.example .env      # then fill in .env, see below
-uv run pytest             # 369 tests, everything should be green
+uv run pytest             # 380 tests, everything should be green
 ```
 
 ### Minimum configuration
@@ -228,7 +230,7 @@ uv run mypy src
 uv run pytest
 ```
 
-369 tests. The calculation layer (`analysis/`) is covered at **100%**: those
+380 tests. The calculation layer (`analysis/`) is covered at **100%**: those
 are the numbers people make decisions on, and an error there would not be
 flagged by any API. External calls are mocked with `respx`; no test touches
 the network.

@@ -28,8 +28,10 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from biocatalyst.i18n import t
 from biocatalyst.models.analysis import Catalyst
 from biocatalyst.models.raw_data import ClinicalTrial
+from biocatalyst.models.report import ReportLanguage
 
 #: Stati che indicano uno studio ancora in corso: solo per questi la data di
 #: completamento primario rappresenta un evento non ancora avvenuto.
@@ -121,6 +123,7 @@ def catalysts_from_trials(
     trials: list[ClinicalTrial],
     today: date | None = None,
     window_months: int | None = None,
+    language: ReportLanguage = "en",
 ) -> list[Catalyst]:
     """Trasforma gli studi con una lettura ancora attesa in catalizzatori.
 
@@ -159,10 +162,10 @@ def catalysts_from_trials(
         eventi = is_event_driven(trial)
         catalysts.append(
             Catalyst(
-                name=f"{_phase_label(trial)}: {trial.brief_title}",
+                name=f"{_phase_label(trial, language)}: {trial.brief_title}",
                 catalyst_type="clinical_readout",
                 expected_date=completion,
-                expected_date_window=_nota_temporale(trial, ritardo, eventi),
+                expected_date_window=_nota_temporale(trial, ritardo, eventi, language),
                 source=f"ClinicalTrials.gov {trial.nct_id}",
                 imminence_rank=rank,
                 is_overdue=ritardo > 0,
@@ -182,39 +185,41 @@ def planned_duration_months(trial: ClinicalTrial) -> float | None:
     return giorni / 30.44 if giorni > 0 else None
 
 
-def _nota_temporale(trial: ClinicalTrial, ritardo: int, eventi: bool) -> str | None:
+def _nota_temporale(
+    trial: ClinicalTrial, ritardo: int, eventi: bool, language: ReportLanguage = "en"
+) -> str | None:
     """Testo che qualifica la data: stimata, in ritardo, e quanto pesa il ritardo."""
     if ritardo > 0:
         mesi = ritardo / 30.44
-        base = (
-            f"data stimata superata da {ritardo} giorni ({mesi:.1f} mesi): "
-            f"lo studio risulta ancora attivo, la lettura è attesa"
-        )
+        base = t(language, "cat.overdue", days=ritardo, months=mesi)
         # Dimensionare il ritardo rispetto al piano: 9 mesi su uno studio
         # previsto in 12 è un'altra cosa rispetto a 9 mesi su uno di 60.
         pianificata = planned_duration_months(trial)
         if pianificata:
-            quota = mesi / pianificata * 100
-            base += f", pari al {quota:.0f}% della durata pianificata di {pianificata:.0f} mesi"
-        if eventi:
-            base += (
-                ". Endpoint a eventi: la durata dipende dal numero di eventi verificatisi, "
-                "non dal calendario, quindi un ritardo può indicare che gli eventi si "
-                "accumulano più lentamente del previsto"
+            base += t(
+                language,
+                "cat.overdue_share",
+                share=mesi / pianificata * 100,
+                planned=pianificata,
             )
+        if eventi:
+            base += t(language, "cat.event_driven_note")
         return base
     if trial.primary_completion_date_type == "ESTIMATED":
-        return "data stimata dallo sponsor"
+        return t(language, "cat.estimated")
     return None
 
 
-def _phase_label(trial: ClinicalTrial) -> str:
+def _phase_label(trial: ClinicalTrial, language: ReportLanguage = "en") -> str:
     if not trial.phase:
-        return "Studio clinico"
-    readable = "/".join(
-        p.replace("PHASE", "Fase ").replace("EARLY_Fase 1", "Fase 1 precoce") for p in trial.phase
-    )
-    return readable.replace("NA", "Fase non applicabile")
+        return t(language, "cat.phase_unknown")
+    prefisso = t(language, "cat.phase_prefix")
+    precoce = t(language, "cat.phase_early")
+    etichette = [
+        precoce if p.upper() == "EARLY_PHASE1" else p.replace("PHASE", prefisso)
+        for p in trial.phase
+    ]
+    return "/".join(etichette).replace("NA", t(language, "cat.phase_na"))
 
 
 def _months_between(start: date, end: date) -> int:

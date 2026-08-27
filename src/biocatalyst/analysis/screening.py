@@ -25,7 +25,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from biocatalyst.i18n import t
 from biocatalyst.models.analysis import Catalyst
+from biocatalyst.models.report import ReportLanguage
 from biocatalyst.models.screening import ScreenCriteria
 
 #: Fasi ordinate: serve a confrontare "almeno PHASE2" con quanto dichiarato.
@@ -180,6 +182,7 @@ def financing_risk_note(
     cash_runway_months: float | None,
     catalyst: Catalyst,
     today: date | None = None,
+    language: ReportLanguage = "en",
 ) -> str | None:
     """Avviso esplicito quando la cassa non arriva al catalizzatore.
 
@@ -194,12 +197,12 @@ def financing_risk_note(
         return None
 
     mancanti = months_away - cash_runway_months
-    return (
-        f"La liquidità copre {cash_runway_months:.1f} mesi contro i {months_away:.1f} che "
-        f"mancano al catalizzatore: {mancanti:.1f} mesi scoperti. Un aumento di capitale "
-        f"prima della lettura dei dati è probabile e diluirà gli azionisti attuali. "
-        f"Attenzione alla coda peggiore: senza accesso al capitale lo studio può essere "
-        f"interrotto, il che è un rischio diverso e più grave della sola diluizione."
+    return t(
+        language,
+        "screen.financing_risk",
+        runway=cash_runway_months,
+        gap=months_away,
+        uncovered=mancanti,
     )
 
 

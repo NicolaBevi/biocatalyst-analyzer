@@ -522,7 +522,7 @@ def test_uno_studio_attivo_in_ritardo_resta_un_catalizzatore() -> None:
     assert len(catalysts) == 1
     assert catalysts[0].is_overdue is True
     assert catalysts[0].overdue_days == 268
-    assert "superata da 268 giorni" in (catalysts[0].expected_date_window or "")
+    assert "passed 268 days ago" in (catalysts[0].expected_date_window or "")
 
 
 def test_una_data_effettiva_passata_significa_completamento_avvenuto() -> None:
@@ -583,7 +583,7 @@ def test_un_ritardo_su_endpoint_a_eventi_viene_spiegato() -> None:
 
     nota = catalysts[0].expected_date_window or ""
     assert catalysts[0].is_event_driven is True
-    assert "eventi si accumulano più lentamente" in nota
+    assert "accruing more slowly" in nota
 
 
 def test_la_materialita_riflette_la_fase() -> None:
@@ -618,7 +618,7 @@ def test_catalizzatori_segnalano_le_date_stimate() -> None:
         [_trial("NCT002", completion_type="ACTUAL")], today=date(2026, 8, 26)
     )
 
-    assert stimato[0].expected_date_window == "data stimata dallo sponsor"
+    assert stimato[0].expected_date_window == "date estimated by the sponsor"
     assert effettivo[0].expected_date_window is None
 
 
@@ -630,16 +630,23 @@ def test_catalizzatori_a_parita_di_data_ordinano_per_identificativo() -> None:
 
 
 @pytest.mark.parametrize(
-    ("phases", "atteso"),
+    ("phases", "lingua", "atteso"),
     [
-        (["PHASE3"], "Fase 3"),
-        (["PHASE1", "PHASE2"], "Fase 1/Fase 2"),
-        (["NA"], "Fase non applicabile"),
-        ([], "Studio clinico"),
+        (["PHASE3"], "en", "Phase 3"),
+        (["PHASE1", "PHASE2"], "en", "Phase 1/Phase 2"),
+        (["NA"], "en", "Phase not applicable"),
+        ([], "en", "Clinical trial"),
+        (["PHASE3"], "it", "Fase 3"),
+        (["NA"], "it", "Fase non applicabile"),
+        ([], "it", "Studio clinico"),
     ],
 )
-def test_etichetta_di_fase(phases: list[str], atteso: str) -> None:
-    catalysts = catalysts_from_trials([_trial("NCT001", phase=phases)], today=date(2026, 8, 26))
+def test_etichetta_di_fase(phases: list[str], lingua: str, atteso: str) -> None:
+    catalysts = catalysts_from_trials(
+        [_trial("NCT001", phase=phases)],
+        today=date(2026, 8, 26),
+        language=lingua,  # type: ignore[arg-type]
+    )
     assert catalysts[0].name.startswith(atteso)
 
 
@@ -684,10 +691,10 @@ def test_compute_metrics_annota_le_metriche_non_calcolabili() -> None:
     assert metrics.quarterly_burn_rate_usd is None
     assert metrics.short_squeeze_score is None
     assert metrics.dilution_risk_score is None
-    assert any("cassa non disponibile" in n for n in notes)
-    assert any("burn rate non calcolabile" in n for n in notes)
-    assert any("short squeeze score non calcolabile" in n for n in notes)
-    assert any("dilution risk score non calcolabile" in n for n in notes)
+    assert any("cash not available" in n for n in notes)
+    assert any("burn rate not computable" in n for n in notes)
+    assert any("short squeeze score not computable" in n for n in notes)
+    assert any("dilution risk score not computable" in n for n in notes)
 
 
 def test_compute_metrics_annota_l_azienda_in_utile() -> None:
@@ -699,8 +706,8 @@ def test_compute_metrics_annota_l_azienda_in_utile() -> None:
 
     assert metrics.quarterly_burn_rate_usd == 0.0
     assert metrics.cash_runway_months is None
-    assert any("mediamente in utile" in n for n in notes)
-    assert any("burn rate è nullo" in n for n in notes)
+    assert any("on average profitable" in n for n in notes)
+    assert any("burn rate is zero" in n for n in notes)
 
 
 def test_compute_metrics_accetta_data_di_riferimento_esplicita() -> None:
@@ -745,8 +752,8 @@ def test_il_ritardo_viene_dimensionato_sulla_durata_pianificata() -> None:
     assert planned_duration_months(trial) == pytest.approx(58, abs=1)
 
     nota = catalysts_from_trials([trial], today=date(2026, 8, 26))[0].expected_date_window or ""
-    assert "durata pianificata" in nota
-    assert "58 mesi" in nota
+    assert "planned duration" in nota
+    assert "58 months" in nota
 
 
 def test_durata_pianificata_none_senza_data_di_inizio() -> None:

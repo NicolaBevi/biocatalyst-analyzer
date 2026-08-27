@@ -13,6 +13,9 @@ rialzo del 1.900%.
 
 from __future__ import annotations
 
+from biocatalyst.i18n import t
+from biocatalyst.models.report import ReportLanguage
+
 #: Oltre queste soglie il target è considerato non verosimile. Ampie di
 #: proposito: su un titolo speculativo un target al doppio o alla metà del
 #: prezzo è normale, uno a venti volte no.
@@ -23,6 +26,7 @@ TARGET_RATIO_MIN = 0.2
 def check_analyst_target(
     analyst_target: float | None,
     current_price: float | None,
+    language: ReportLanguage = "en",
 ) -> str | None:
     """Restituisce un avviso se il target analisti è incoerente col prezzo.
 
@@ -36,17 +40,16 @@ def check_analyst_target(
 
     ratio = analyst_target / current_price
     if ratio > TARGET_RATIO_MAX:
-        return (
-            f"Target medio analisti (${analyst_target:,.2f}) pari a {ratio:.1f} volte il prezzo "
-            f"corrente (${current_price:,.2f}): valore probabilmente non aggiornato dopo un "
-            f"raggruppamento di azioni o un forte ribasso. "
-            f"Da verificare alla fonte prima di usarlo."
+        return t(
+            language,
+            "warn.target_too_high",
+            target=analyst_target,
+            ratio=ratio,
+            price=current_price,
         )
     if ratio < TARGET_RATIO_MIN:
-        return (
-            f"Target medio analisti (${analyst_target:,.2f}) pari a {ratio:.2f} volte il prezzo "
-            f"corrente (${current_price:,.2f}): valore anomalo, probabilmente non aggiornato. "
-            f"Da verificare alla fonte prima di usarlo."
+        return t(
+            language, "warn.target_too_low", target=analyst_target, ratio=ratio, price=current_price
         )
     return None
 
@@ -55,19 +58,16 @@ def collect_data_warnings(
     analyst_target: float | None,
     current_price: float | None,
     short_interest_days_old: int | None = None,
+    language: ReportLanguage = "en",
 ) -> list[str]:
     """Raccoglie tutti gli avvisi di qualità del dato per il report."""
     warnings: list[str] = []
 
-    target_warning = check_analyst_target(analyst_target, current_price)
+    target_warning = check_analyst_target(analyst_target, current_price, language)
     if target_warning is not None:
         warnings.append(target_warning)
 
     if short_interest_days_old is not None and short_interest_days_old > 0:
-        warnings.append(
-            f"Lo short interest è riferito a {short_interest_days_old} giorni fa: FINRA lo "
-            f"rileva due volte al mese, quindi il dato è strutturalmente arretrato per "
-            f"qualunque fonte, non solo per questa."
-        )
+        warnings.append(t(language, "warn.short_interest_stale", days=short_interest_days_old))
 
     return warnings

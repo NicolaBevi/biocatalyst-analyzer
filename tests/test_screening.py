@@ -517,10 +517,10 @@ def test_avviso_finanziario_quando_la_cassa_non_arriva_al_catalizzatore() -> Non
     avviso = financing_risk_note(2.0, _catalizzatore(giorni=180), OGGI)
 
     assert avviso is not None
-    assert "2.0 mesi" in avviso
+    assert "2.0 months" in avviso
     # Distingue i due rischi: diluizione e interruzione dello studio.
-    assert "diluir" in avviso
-    assert "interrotto" in avviso
+    assert "dilute" in avviso
+    assert "halted" in avviso
 
 
 def test_nessun_avviso_se_la_cassa_basta() -> None:

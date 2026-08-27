@@ -47,6 +47,7 @@ stato e decisioni, non un artefatto usa-e-getta.
 src/biocatalyst/
 ├── config.py       # Settings (pydantic-settings): provider LLM, key, cache TTL — FATTO
 ├── log.py          # structlog, configure_logging()/get_logger() — FATTO
+├── i18n.py         # catalogo dei messaggi generati dal codice, EN/IT
 ├── llm/            # BaseLLMProvider + 6 provider + factory — FATTO (Fase 1)
 │   └── structured.py # output JSON validato con Pydantic — Fase 5
 ├── models/         # schemi Pydantic condivisi — FATTO (Fase 2)
@@ -113,6 +114,9 @@ src/biocatalyst/
 | **DataCollectorAgent non usa l'LLM** | Il suo compito è raccogliere fatti verificabili; un modello linguistico introdurrebbe solo il rischio di inventarli |
 | **`_sponsor_query()` toglie la forma societaria dalla ragione sociale** | ClinicalTrials.gov registra "Ensysce Biosciences", la SEC "Ensysce Biosciences, Inc.": senza la normalizzazione la ricerca per sponsor non troverebbe nulla |
 | **Expected value in dollari su $1.000**, non in euro | Il titolo quota in dollari: calcolare in quella valuta evita di far entrare un'assunzione sul cambio nel risultato. Il tasso EUR/USD resta allegato come riferimento informativo, e la sua assenza non blocca più il report |
+| **Inglese come lingua predefinita**, di report *e* interfaccia | CLI e UI Streamlit sono in inglese; il report resta generabile anche in italiano |
+| **`i18n.py`: catalogo centrale dei messaggi generati dal codice** | I testi prodotti dal codice (etichette delle fonti, note sulle metriche, avvisi, note sui catalizzatori) comparivano nella lingua in cui erano stati scritti a prescindere da quella scelta: un report in inglese conteneva "cassa non disponibile nei filing XBRL". Erano sparsi in sei moduli e a mano sarebbero divergiti di nuovo. Due test verificano che ogni chiave esista in entrambe le lingue e che i segnaposto di `.format()` coincidano |
+| **Screening esposto anche nella UI**, non solo da CLI | La pagina ha due schede: analisi di un ticker e ricerca di opportunità, con gli stessi criteri e profili di rischio della riga di comando |
 | **Report bilingue IT/EN**, scelto per singola analisi | Prompt di sistema, etichette e spiegazioni sono in `agents/prompts.py` e `report/labels.py`. Un test verifica che le due lingue abbiano esattamente le stesse chiavi, altrimenti resterebbe testo non tradotto |
 | **`deepseek-v4-pro` per il solo agente scrittore**, flash per gli altri | Il report finale è il punto in cui la qualità del ragionamento conta di più. Costa: ~142s contro i ~40s del flash. Gli altri agenti restano su flash |
 | **Analista: una sola chiamata LLM per valutazione clinica e TAM** (`TrialAndMarketAssessment`) | Il contesto del prompt è identico nei due casi: sdoppiarlo raddoppiava i token senza migliorare le risposte. Da 4 chiamate LLM per report a 3 |

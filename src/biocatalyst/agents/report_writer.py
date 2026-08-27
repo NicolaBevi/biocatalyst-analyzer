@@ -35,6 +35,7 @@ from biocatalyst.analysis import (
 )
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
+from biocatalyst.i18n import t
 from biocatalyst.llm.base import BaseLLMProvider, Message
 from biocatalyst.llm.structured import complete_structured
 from biocatalyst.log import get_logger
@@ -95,7 +96,7 @@ class ReportWriterAgent(BaseAgent):
         self,
         provider: BaseLLMProvider,
         providers: DataProviders,
-        language: ReportLanguage = "it",
+        language: ReportLanguage = "en",
         max_tokens: int = 16_000,
     ) -> None:
         self.provider = provider
@@ -142,7 +143,7 @@ class ReportWriterAgent(BaseAgent):
         # resta un riferimento per il lettore in area euro, quindi la sua
         # assenza non blocca più il report.
         rate = collect_safely(
-            "cambio EUR/USD di riferimento (Frankfurter)",
+            t(self.language, "src.fx"),
             lambda: self.providers.forex.get_eur_usd(),
             missing,
         )
@@ -157,6 +158,7 @@ class ReportWriterAgent(BaseAgent):
             analyst_target=raw.market_data.analyst_target_mean if raw.market_data else None,
             current_price=price,
             short_interest_days_old=_giorni_di_ritardo(raw),
+            language=self.language,
         )
 
         report = Report(
@@ -184,7 +186,7 @@ class ReportWriterAgent(BaseAgent):
                 potential_acquirers=draft.potential_acquirers,
                 comparable_deals=draft.comparable_deals,
             ),
-            tam=analysis.tam or _tam_non_disponibile(),
+            tam=analysis.tam or _tam_non_disponibile(self.language),
             source_quality=SourceQuality(
                 sources_consulted=_sources(raw),
                 missing_data=sorted(set(missing)),
@@ -215,16 +217,13 @@ def _giorni_di_ritardo(raw: CompanyRawData) -> int | None:
     return (datetime.now(UTC).date() - raw.market_data.short_interest_date).days
 
 
-def _tam_non_disponibile() -> TAMEstimate:
+def _tam_non_disponibile(language: ReportLanguage = "en") -> TAMEstimate:
     """Segnaposto esplicito: dichiara l'assenza invece di lasciare il campo vuoto."""
     return TAMEstimate(
-        indication="non determinata",
-        prevalence_estimate="non disponibile",
-        pricing_comparable="non disponibile",
-        methodology_notes=(
-            "Stima del TAM non prodotta: nessuno studio di riferimento utilizzabile "
-            "o chiamata al modello non riuscita."
-        ),
+        indication=t(language, "tam.indication_unknown"),
+        prevalence_estimate=t(language, "tam.not_available"),
+        pricing_comparable=t(language, "tam.not_available"),
+        methodology_notes=t(language, "tam.not_produced"),
     )
 
 

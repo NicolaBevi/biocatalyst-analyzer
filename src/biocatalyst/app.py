@@ -1,16 +1,18 @@
-"""Interfaccia Streamlit.
+"""Streamlit interface.
 
-Due vincoli di Streamlit Community Cloud hanno guidato il progetto di questa
-pagina:
+Two Streamlit Community Cloud constraints shaped this page:
 
-1. **Timeout di ~60s sulle risposte HTTP in uscita.** L'agente scrittore
-   impiega più del doppio. Non si risolve spostando la chiamata in un thread:
-   la risposta HTTP resta comunque lunga. Si risolve con lo streaming, che
-   tiene i byte in movimento (verificato: intervallo massimo fra chunk 0,7s).
-   Lo streaming è attivo per default via `LLM_USE_STREAMING`.
-2. **La pipeline dura minuti.** Eseguirla dentro il ciclo di rendering
-   bloccherebbe l'interfaccia: gira in un thread separato e la pagina si
-   aggiorna leggendo lo stato condiviso.
+1. **~60s timeout on outbound HTTP responses.** The writer agent takes more
+   than twice that. Moving the call to a thread does not help: the HTTP
+   response is just as long. Streaming does, by keeping bytes flowing
+   (measured: longest gap between chunks 0.7s). Streaming is on by default
+   via `LLM_USE_STREAMING`.
+2. **The pipeline takes minutes.** Running it inside the render loop would
+   block the interface, so it runs in a separate thread and the page reads
+   shared state.
+
+The interface is in English, matching the default report language. The report
+itself can still be produced in Italian.
 """
 
 from __future__ import annotations
@@ -26,71 +28,108 @@ import streamlit as st
 
 from biocatalyst import __version__
 from biocatalyst.agents import analyze as run_analysis
+from biocatalyst.analysis.screening import RISK_APPETITES
 from biocatalyst.config import LLMProviderName, Settings, get_settings
 from biocatalyst.data.factory import build_data_providers
+from biocatalyst.data.universe import DEFAULT_SIC_CODES, PHARMA_SIC_CODE
 from biocatalyst.models.report import Report
+from biocatalyst.models.screening import ScreenCriteria, ScreenResult
 from biocatalyst.report import DEFAULT_REPORTS_DIR, render_json, render_markdown, save_all_formats
 from biocatalyst.report.pdf import PDFRenderingError, render_pdf
+from biocatalyst.screening import (
+    DEFAULT_MAX_CANDIDATES,
+    DEFAULT_MAX_UNIVERSE,
+)
+from biocatalyst.screening import (
+    screen as run_screen,
+)
 
 st.set_page_config(page_title="BioCatalyst Analyzer", page_icon="🧬", layout="wide")
 
-AGENTI_TOTALI = 4
+TOTAL_AGENTS = 4
 
 
 @dataclass
-class StatoAnalisi:
-    """Stato condiviso fra il thread di lavoro e il ciclo di rendering."""
+class Job:
+    """State shared between a worker thread and the render loop."""
 
-    ticker: str
-    lingua: str
-    fase: str = "in attesa"
-    indice: int = 0
-    report: Report | None = None
-    errore: str | None = None
-    avviata: datetime = field(default_factory=lambda: datetime.now(UTC))
-    conclusa: bool = False
+    label: str
+    stage: str = "starting"
+    step: int = 0
+    total: int = TOTAL_AGENTS
+    result: Any = None
+    error: str | None = None
+    started: datetime = field(default_factory=lambda: datetime.now(UTC))
+    done: bool = False
 
 
-def _avvia_analisi(ticker: str, lingua: str, settings: Settings) -> StatoAnalisi:
-    """Lancia la pipeline in un thread e restituisce subito lo stato osservabile."""
-    stato = StatoAnalisi(ticker=ticker.upper(), lingua=lingua)
+def _run_in_thread(job: Job, work: Any) -> Job:
+    """Starts the work in a daemon thread and returns the observable state."""
 
-    def lavora() -> None:
+    def worker() -> None:
+        try:
+            job.result = work(job)
+        except Exception as exc:  # the UI must show the error, not die
+            job.error = f"{type(exc).__name__}: {exc}"
+            traceback.print_exc()  # the traceback stays in the server logs
+        finally:
+            job.done = True
+
+    threading.Thread(target=worker, daemon=True).start()
+    return job
+
+
+def _start_analysis(ticker: str, language: str, settings: Settings) -> Job:
+    job = Job(label=ticker.upper())
+
+    def work(current: Job) -> Report:
         providers = build_data_providers(settings)
         try:
 
-            def avanzamento(indice: int, totale: int, nome: str) -> None:
-                stato.indice = indice
-                stato.fase = nome
+            def progress(step: int, total: int, name: str) -> None:
+                current.step, current.total, current.stage = step, total, name
 
-            stato.report = run_analysis(
+            return run_analysis(
                 ticker,
                 providers=providers,
                 settings=settings,
-                on_progress=avanzamento,
-                language=lingua,  # type: ignore[arg-type]
+                on_progress=progress,
+                language=language,  # type: ignore[arg-type]
             )
-        except Exception as exc:  # la UI deve mostrare l'errore, non morire
-            stato.errore = f"{type(exc).__name__}: {exc}"
-            # Il traceback resta nei log del server, non finisce in pagina.
-            traceback.print_exc()
         finally:
             providers.close()
-            stato.conclusa = True
 
-    threading.Thread(target=lavora, daemon=True).start()
-    return stato
+    return _run_in_thread(job, work)
 
 
-def _impostazioni_correnti() -> Settings:
-    """Configurazione con gli override scelti nella barra laterale."""
+def _start_screen(criteria: ScreenCriteria, settings: Settings, options: dict[str, Any]) -> Job:
+    job = Job(label="screening", total=100)
+
+    def work(current: Job) -> ScreenResult:
+        def progress(phase: str, done: int, total: int) -> None:
+            current.stage = phase
+            current.step, current.total = done, max(total, 1)
+
+        return run_screen(
+            criteria=criteria,
+            settings=settings,
+            language=settings.report_language,
+            on_progress=progress,
+            **options,
+        )
+
+    return _run_in_thread(job, work)
+
+
+def _settings_with_overrides(language: str) -> Settings:
+    """Configuration with the sidebar overrides applied."""
     settings = get_settings()
-    updates: dict[str, Any] = {}
+    updates: dict[str, Any] = {"report_language": language}
 
-    provider_scelto = st.session_state.get("provider")
-    if provider_scelto and provider_scelto != "(dal file .env)":
+    chosen = st.session_state.get("provider")
+    if chosen and chosen != "(from .env)":
         updates.update(
-            default_provider=LLMProviderName(provider_scelto),
+            default_provider=LLMProviderName(chosen),
             default_model=None,
             agent_analyst_provider=None,
             agent_analyst_model=None,
@@ -99,176 +138,302 @@ def _impostazioni_correnti() -> Settings:
             agent_writer_provider=None,
             agent_writer_model=None,
         )
-    return settings.model_copy(update=updates) if updates else settings
+    return settings.model_copy(update=updates)
 
 
-def _barra_laterale() -> tuple[str, str]:
+def _sidebar() -> str:
     with st.sidebar:
         st.title("🧬 BioCatalyst")
-        st.caption(f"versione {__version__}")
+        st.caption(f"version {__version__}")
 
-        ticker = st.text_input("Ticker", value="ENSC", help="Es. ENSC, MRNA, VRTX").strip()
-        lingua = st.radio(
-            "Lingua del report",
-            options=["it", "en"],
-            format_func=lambda v: {"it": "Italiano", "en": "English"}[v],
+        language = st.radio(
+            "Report language",
+            options=["en", "it"],
+            format_func=lambda v: {"en": "English", "it": "Italiano"}[v],
             horizontal=True,
         )
 
-        with st.expander("Configurazione modello"):
+        with st.expander("Model configuration"):
             st.selectbox(
-                "Provider LLM",
-                options=["(dal file .env)", *[p.value for p in LLMProviderName]],
+                "LLM provider",
+                options=["(from .env)", *[p.value for p in LLMProviderName]],
                 key="provider",
-                help="Cambiando provider si azzerano i modelli per-agente del .env.",
+                help="Changing the provider clears the per-agent models set in .env.",
             )
             try:
                 settings = get_settings()
                 default = settings.default_model or "—"
-                analista = settings.agent_analyst_model or default
-                notizie = settings.agent_news_model or default
-                scrittore = settings.agent_writer_model or default
-                streaming = "attivo" if settings.llm_use_streaming else "disattivo"
                 st.caption(
-                    f"Analista: `{analista}`  \n"
-                    f"Notizie: `{notizie}`  \n"
-                    f"Report: `{scrittore}`  \n"
-                    f"Streaming: {streaming}"
+                    f"Analyst: `{settings.agent_analyst_model or default}`  \n"
+                    f"News: `{settings.agent_news_model or default}`  \n"
+                    f"Writer: `{settings.agent_writer_model or default}`  \n"
+                    f"Streaming: {'on' if settings.llm_use_streaming else 'off'}"
                 )
-            except Exception as exc:  # configurazione incompleta
-                st.error(f"Configurazione non valida: {exc}")
+            except Exception as exc:  # incomplete configuration
+                st.error(f"Invalid configuration: {exc}")
 
         st.divider()
         st.caption(
-            "L'analisi richiede alcuni minuti: quattro agenti in sequenza, "
-            "di cui due usano un modello di ragionamento."
+            "A full analysis takes a few minutes: four agents in sequence, two of "
+            "which use a reasoning model."
         )
-    return ticker, lingua
+    return language
 
 
-def _mostra_avanzamento(stato: StatoAnalisi) -> None:
-    trascorso = (datetime.now(UTC) - stato.avviata).total_seconds()
+def _progress(job: Job) -> None:
+    elapsed = (datetime.now(UTC) - job.started).total_seconds()
     st.progress(
-        min(stato.indice / AGENTI_TOTALI, 1.0),
-        text=f"({stato.indice}/{AGENTI_TOTALI}) {stato.fase} — {trascorso:.0f}s",
+        min(job.step / max(job.total, 1), 1.0),
+        text=f"({job.step}/{job.total}) {job.stage} — {elapsed:.0f}s",
     )
 
 
 @st.fragment(run_every=2)
-def _avanzamento_che_si_aggiorna(stato: StatoAnalisi) -> None:
-    """Frammento che si ridisegna da solo ogni 2 secondi.
+def _live_progress(job: Job) -> None:
+    """Redraws itself every 2 seconds while the worker thread runs.
 
-    Aggiornare solo questo blocco invece dell'intera pagina evita di
-    ricostruire la barra laterale a ogni battito. Quando il thread ha finito
-    serve però un ricalcolo completo, per sostituire la barra col report.
+    Refreshing only this block avoids rebuilding the sidebar on every tick;
+    when the thread finishes a full rerun replaces the bar with the result.
     """
-    _mostra_avanzamento(stato)
-    if stato.conclusa:
+    _progress(job)
+    if job.done:
         st.rerun(scope="app")
 
 
-def _mostra_report(report: Report) -> None:
-    colore = {"BUY": "green", "HOLD": "orange", "SELL": "red"}[report.rating]
+# --- Analyse tab ------------------------------------------------------------------
+
+
+def _analyse_tab(language: str) -> None:
+    col_input, col_button = st.columns([3, 1])
+    ticker = col_input.text_input(
+        "Ticker", value="ENSC", help="e.g. ENSC, SLS, MRNA", label_visibility="collapsed"
+    ).strip()
+
+    job: Job | None = st.session_state.get("analysis_job")
+    running = job is not None and not job.done
+
+    if col_button.button(
+        "Analyse", type="primary", disabled=running or not ticker, width="stretch"
+    ):
+        try:
+            settings = _settings_with_overrides(language)
+        except Exception as exc:
+            st.error(f"Invalid configuration: {exc}")
+            return
+        st.session_state["analysis_job"] = _start_analysis(ticker, language, settings)
+        st.rerun()
+
+    if job is None:
+        st.info(
+            "Enter a ticker and start the analysis. The system pulls data from SEC "
+            "EDGAR, ClinicalTrials.gov, openFDA, yfinance and Finnhub, then writes a "
+            "due diligence report."
+        )
+        return
+
+    if not job.done:
+        _live_progress(job)
+        return
+
+    if job.error is not None:
+        st.error(f"Analysis of {job.label} failed.\n\n{job.error}")
+        return
+
+    if isinstance(job.result, Report):
+        _show_report(job.result)
+
+
+def _show_report(report: Report) -> None:
+    colour = {"BUY": "green", "HOLD": "orange", "SELL": "red"}[report.rating]
     st.markdown(
         f"## {report.company_name or report.ticker} "
-        f"(:{colore}[{report.rating}]) — ${report.current_price:,.4f}"
+        f"(:{colour}[{report.rating}]) — ${report.current_price:,.4f}"
     )
 
-    if report.source_quality.warnings:
-        for avviso in report.source_quality.warnings:
-            st.warning(avviso, icon="⚠️")
+    for warning in report.source_quality.warnings:
+        st.warning(warning, icon="⚠️")
 
     m = report.financial_metrics
-    colonne = st.columns(4)
-    colonne[0].metric(
-        "Autonomia di cassa",
-        f"{m.cash_runway_months:,.1f} mesi" if m.cash_runway_months is not None else "—",
+    cols = st.columns(4)
+    cols[0].metric(
+        "Cash runway",
+        f"{m.cash_runway_months:,.1f} months" if m.cash_runway_months is not None else "—",
     )
-    colonne[1].metric(
-        "Burn trimestrale",
+    cols[1].metric(
+        "Quarterly burn",
         f"${m.quarterly_burn_rate_usd:,.0f}" if m.quarterly_burn_rate_usd is not None else "—",
     )
-    colonne[2].metric(
-        "Rischio diluizione",
+    cols[2].metric(
+        "Dilution risk",
         f"{m.dilution_risk_score:,.0f}/100" if m.dilution_risk_score is not None else "—",
     )
-    riga = report.expected_value.rows[0]
-    colonne[3].metric(
-        f"Valore atteso su ${riga.investment_usd:,.0f}",
-        f"${riga.expected_value_usd:,.2f}",
-        delta=f"{riga.expected_roi_pct:+.1f}%",
+    row = report.expected_value.rows[0]
+    cols[3].metric(
+        f"Expected value on ${row.investment_usd:,.0f}",
+        f"${row.expected_value_usd:,.2f}",
+        delta=f"{row.expected_roi_pct:+.1f}%",
     )
 
-    _pulsanti_esportazione(report)
+    _export_buttons(report)
     st.divider()
     st.markdown(render_markdown(report))
 
 
-def _pulsanti_esportazione(report: Report) -> None:
-    colonne = st.columns(4)
+def _export_buttons(report: Report) -> None:
+    cols = st.columns(4)
     base = f"{report.ticker}_{report.report_date.isoformat()}_{report.language}"
 
-    colonne[0].download_button(
+    cols[0].download_button(
         "⬇ Markdown", render_markdown(report), f"{base}.md", "text/markdown", width="stretch"
     )
-    colonne[1].download_button(
+    cols[1].download_button(
         "⬇ JSON", render_json(report), f"{base}.json", "application/json", width="stretch"
     )
-
     try:
-        percorso = render_pdf(report, Path(st.session_state["cartella_pdf"]) / f"{base}.pdf")
-        colonne[2].download_button(
-            "⬇ PDF",
-            percorso.read_bytes(),
-            f"{base}.pdf",
-            "application/pdf",
-            width="stretch",
+        path = render_pdf(report, Path(st.session_state["pdf_dir"]) / f"{base}.pdf")
+        cols[2].download_button(
+            "⬇ PDF", path.read_bytes(), f"{base}.pdf", "application/pdf", width="stretch"
         )
     except PDFRenderingError as exc:
-        colonne[2].button("⬇ PDF", disabled=True, help=str(exc), width="stretch")
+        cols[2].button("⬇ PDF", disabled=True, help=str(exc), width="stretch")
 
-    if colonne[3].button("💾 Salva in reports/", width="stretch"):
-        scritti = save_all_formats(report, DEFAULT_REPORTS_DIR)
-        st.success(f"Salvati {len(scritti)} file in `{DEFAULT_REPORTS_DIR / report.ticker}/`")
+    if cols[3].button("💾 Save to reports/", width="stretch"):
+        written = save_all_formats(report, DEFAULT_REPORTS_DIR)
+        st.success(f"Saved {len(written)} files to `{DEFAULT_REPORTS_DIR / report.ticker}/`")
+
+
+# --- Screen tab -------------------------------------------------------------------
+
+
+def _screen_tab(language: str) -> None:
+    st.caption(
+        "Screens NASDAQ/NYSE biotechs built from SEC SIC codes. Price, catalysts and "
+        "cash are filtered on free data; the language model runs once, only on the "
+        "finalists."
+    )
+
+    col1, col2, col3 = st.columns(3)
+    max_price = col1.number_input("Max price ($)", value=10.0, min_value=0.5, step=1.0)
+    max_cap = col2.number_input("Max market cap ($M)", value=500.0, min_value=10.0, step=50.0)
+    window = col3.number_input("Catalyst window (months)", value=6, min_value=1, max_value=36)
+
+    col4, col5, col6 = st.columns(3)
+    risk = col4.selectbox(
+        "Risk profile",
+        options=list(RISK_APPETITES),
+        index=list(RISK_APPETITES).index("bilanciato"),
+        help=(
+            "Speculative ignores cash in the ranking: dilution reduces the upside but "
+            "does not remove it, and discounted names are where asymmetric bets live. "
+            "The financing risk is flagged on every candidate regardless."
+        ),
+    )
+    limit = col5.number_input("Candidates", value=DEFAULT_MAX_CANDIDATES, min_value=1, max_value=20)
+    universe = col6.number_input(
+        "Stocks to examine", value=DEFAULT_MAX_UNIVERSE, min_value=10, max_value=1000, step=10
+    )
+
+    include_pharma = st.checkbox(
+        "Include SIC 2834 (pharmaceutical preparations)",
+        help="Adds over 1,500 companies, mostly large pharma. Much slower.",
+    )
+
+    job: Job | None = st.session_state.get("screen_job")
+    running = job is not None and not job.done
+
+    if st.button("Run screen", type="primary", disabled=running, width="stretch"):
+        try:
+            settings = _settings_with_overrides(language)
+        except Exception as exc:
+            st.error(f"Invalid configuration: {exc}")
+            return
+        criteria = ScreenCriteria(
+            max_price_usd=max_price,
+            max_price_usd_exceptional=max_price * 1.5,
+            market_cap_max_usd=max_cap * 1_000_000,
+            market_cap_max_usd_exceptional=max_cap * 4_000_000,
+            catalyst_window_months=int(window),
+        )
+        st.session_state["screen_job"] = _start_screen(
+            criteria,
+            settings,
+            {
+                "sic_codes": (*DEFAULT_SIC_CODES, PHARMA_SIC_CODE)
+                if include_pharma
+                else DEFAULT_SIC_CODES,
+                "max_candidates": int(limit),
+                "max_universe": int(universe),
+                "appetite": RISK_APPETITES[risk],
+            },
+        )
+        st.rerun()
+
+    if job is None:
+        return
+
+    if not job.done:
+        _live_progress(job)
+        return
+
+    if job.error is not None:
+        st.error(f"Screening failed.\n\n{job.error}")
+        return
+
+    if isinstance(job.result, ScreenResult):
+        _show_screen(job.result)
+
+
+def _show_screen(result: ScreenResult) -> None:
+    if not result.candidates:
+        st.warning(
+            "No stock meets the criteria. Try widening the catalyst window or the price threshold."
+        )
+        return
+
+    st.success(f"{len(result.candidates)} candidates found")
+    st.dataframe(
+        [
+            {
+                "Ticker": c.ticker,
+                "Price": f"${c.price:,.2f}",
+                "Market cap": f"${c.market_cap_usd / 1_000_000:,.0f}M",
+                "Catalyst": str(c.catalyst.expected_date or c.catalyst.expected_date_window),
+                "Runway": f"{c.cash_runway_months:,.1f}m"
+                if c.cash_runway_months is not None
+                else "—",
+                "Score": f"{c.attractiveness_score:,.0f}",
+                "Cash": "needs refinancing" if c.financing_risk else "sufficient",
+            }
+            for c in result.candidates
+        ],
+        width="stretch",
+        hide_index=True,
+    )
+
+    for c in result.candidates:
+        with st.expander(f"{c.ticker} — {c.company_name}"):
+            if c.exceptional:
+                st.info("Above the ordinary thresholds, included as an exception.", icon="ℹ️")
+            if c.financing_risk:
+                st.warning(c.financing_risk, icon="⚠️")
+            st.write(c.rationale)
+            for risk_item in c.key_risks:
+                st.markdown(f"- **Risk:** {risk_item}")
+            st.caption(f"{c.main_drug} · {c.indication} · {c.catalyst.source}")
 
 
 def main() -> None:
-    if "cartella_pdf" not in st.session_state:
+    if "pdf_dir" not in st.session_state:
         import tempfile
 
-        st.session_state["cartella_pdf"] = tempfile.mkdtemp(prefix="biocatalyst-")
+        st.session_state["pdf_dir"] = tempfile.mkdtemp(prefix="biocatalyst-")
 
-    ticker, lingua = _barra_laterale()
-    stato: StatoAnalisi | None = st.session_state.get("analisi")
-
-    in_corso = stato is not None and not stato.conclusa
-    if st.button("Analizza", type="primary", disabled=in_corso or not ticker):
-        try:
-            settings = _impostazioni_correnti()
-        except Exception as exc:
-            st.error(f"Configurazione non valida: {exc}")
-            return
-        st.session_state["analisi"] = _avvia_analisi(ticker, lingua, settings)
-        st.rerun()
-
-    if stato is None:
-        st.info(
-            "Inserisci un ticker e avvia l'analisi. "
-            "Il sistema raccoglie dati da SEC EDGAR, ClinicalTrials.gov, openFDA, "
-            "yfinance e Finnhub, poi produce un report di due diligence."
-        )
-        return
-
-    if not stato.conclusa:
-        _avanzamento_che_si_aggiorna(stato)
-        return
-
-    if stato.errore is not None:
-        st.error(f"Analisi di {stato.ticker} non riuscita.\n\n{stato.errore}")
-        return
-
-    if stato.report is not None:
-        _mostra_report(stato.report)
+    language = _sidebar()
+    analyse, screen_tab = st.tabs(["Analyse a ticker", "Screen for opportunities"])
+    with analyse:
+        _analyse_tab(language)
+    with screen_tab:
+        _screen_tab(language)
 
 
 main()
