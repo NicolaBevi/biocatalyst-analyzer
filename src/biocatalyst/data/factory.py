@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from biocatalyst.config import Settings, get_settings
 from biocatalyst.data.cache import DataCache
 from biocatalyst.data.clinical_trials import ClinicalTrialsProvider
+from biocatalyst.data.drug_pricing import DrugPricingProvider
 from biocatalyst.data.fda import FDAProvider
 from biocatalyst.data.forex import ForexProvider
 from biocatalyst.data.market import MarketDataProvider
@@ -29,6 +30,7 @@ class DataProviders:
     fda: FDAProvider
     news: NewsProvider
     forex: ForexProvider
+    drug_pricing: DrugPricingProvider
 
     def close(self) -> None:
         self.cache.close()
@@ -67,6 +69,11 @@ def build_data_providers(
             cache=cache,
             timeout=settings.http_request_timeout_seconds,
             ttl_seconds=settings.cache_ttl_price_seconds,
+        ),
+        drug_pricing=DrugPricingProvider(
+            cache=cache,
+            timeout=settings.http_request_timeout_seconds,
+            ttl_seconds=settings.cache_ttl_filing_seconds,
         ),
         forex=ForexProvider(
             cache=cache,

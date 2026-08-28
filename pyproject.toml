@@ -33,8 +33,6 @@ dev = [
     "mypy>=1.11",
     "pytest>=8.3",
     "pytest-cov>=5.0",
-    "responses>=0.25",
-    "vcrpy>=6.0",
     # Importato dai test per costruire le eccezioni degli SDK: anthropic e
     # openai tipizzano le loro eccezioni su httpx2, non su httpx.
     "httpx2>=2",

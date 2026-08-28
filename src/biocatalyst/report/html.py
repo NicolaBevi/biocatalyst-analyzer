@@ -71,9 +71,17 @@ TEMPLATE = """
   {% if r.tam.tam_low_usd and r.tam.tam_high_usd %}
   <li>{{ money(r.tam.tam_low_usd, 0) }} – {{ money(r.tam.tam_high_usd, 0) }}</li>
   {% endif %}
+  {% if r.tam.verified_pricing %}
+  <li><strong>{{ lb('verified_pricing') }}</strong>: {{ r.tam.verified_pricing.brand_name }} —
+      {{ money(r.tam.verified_pricing.avg_spend_per_beneficiary_usd, 0) }}
+      {{ lb('per_beneficiary') }}
+      (Medicare Part {{ r.tam.verified_pricing.medicare_part }},
+      {{ r.tam.verified_pricing.year }}, CMS)</li>
+  {% endif %}
 </ul>
 <p>{{ r.tam.methodology_notes }}</p>
 <div class="nota">{{ ex('tam') }}</div>
+{% if r.tam.verified_pricing %}<div class="nota">{{ ex('verified_pricing') }}</div>{% endif %}
 {% endif %}
 
 <h2>{{ lb('sec_catalyst') }}</h2>

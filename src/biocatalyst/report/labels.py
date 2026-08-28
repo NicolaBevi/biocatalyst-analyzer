@@ -69,6 +69,8 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "estimated_date": "data stimata dallo sponsor",
         "overdue": "IN RITARDO",
         "event_driven": "endpoint a eventi",
+        "verified_pricing": "Prezzo verificato (spesa Medicare)",
+        "per_beneficiary": "per beneficiario/anno",
         "glossary": "Come leggere questo report",
         "disclaimer_title": "Avvertenza",
     },
@@ -129,6 +131,8 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "estimated_date": "date estimated by the sponsor",
         "overdue": "OVERDUE",
         "event_driven": "event-driven endpoint",
+        "verified_pricing": "Verified pricing (Medicare spending)",
+        "per_beneficiary": "per beneficiary per year",
         "glossary": "How to read this report",
         "disclaimer_title": "Disclaimer",
     },
@@ -192,6 +196,14 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
             "non dal calendario: un ritardo può indicare eventi più lenti del previsto, ma "
             "anche difficoltà operative."
         ),
+        "verified_pricing": (
+            "Il modello sceglie quale farmaco sia il comparatore di prezzo; questa cifra "
+            "però non viene da lui, ma dai dati di spesa Medicare pubblicati da CMS: è la "
+            "spesa media annua effettivamente sostenuta per un beneficiario trattato con "
+            "quel farmaco. Copre la sola popolazione Medicare, quindi è un ordine di "
+            "grandezza e non un prezzo di listino. Se manca, significa che il farmaco "
+            "citato non compare nei dati Medicare e la stima resta non verificata."
+        ),
         "tam": (
             "Stima del mercato potenziale del farmaco principale, prodotta dal modello "
             "linguistico a partire da dati di prevalenza e prezzi di terapie comparabili. È una "
@@ -249,6 +261,14 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
             "imminent. If the trial has an event-driven endpoint (survival), its duration "
             "depends on how many events have occurred rather than on the calendar: a delay may "
             "point to slower-than-expected events, but also to operational difficulties."
+        ),
+        "verified_pricing": (
+            "The model chooses which drug serves as the pricing comparator; this figure, "
+            "however, does not come from the model but from the Medicare spending data "
+            "published by CMS: it is the average annual amount actually spent on one "
+            "beneficiary treated with that drug. It covers the Medicare population only, "
+            "so it is an order of magnitude rather than a list price. If absent, the drug "
+            "cited is not in the Medicare data and the estimate remains unverified."
         ),
         "tam": (
             "Estimate of the lead drug's addressable market, produced by the language model "

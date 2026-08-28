@@ -869,3 +869,84 @@ def test_finnhub_il_token_non_finisce_nei_messaggi_di_errore() -> None:
         provider.get_company_news("ENSC")
 
     assert "token-segretissimo" not in str(exc_info.value)
+
+
+# --- Prezzi reali dei farmaci (CMS Medicare) --------------------------------------
+
+_CMS_PART_D = [
+    {
+        "Brnd_Name": "Keytruda",
+        "Gnrc_Name": "Pembrolizumab",
+        "Tot_Spndng_2024": 120000000.0,
+        "Tot_Benes_2024": 1600,
+        "Avg_Spnd_Per_Bene_2024": 73481.0,
+        "Avg_Spnd_Per_Bene_2023": 76704.0,
+    }
+]
+
+
+@respx.mock
+def test_prezzo_farmaco_dal_dato_medicare_piu_recente() -> None:
+    """Il TAM va ancorato a un prezzo reale, non alla memoria del modello."""
+    from biocatalyst.data.drug_pricing import PART_D_URL, DrugPricingProvider
+
+    respx.get(PART_D_URL).mock(return_value=httpx.Response(200, json=_CMS_PART_D))
+
+    spesa = DrugPricingProvider(max_retries=1).get_spending("Keytruda")
+
+    assert spesa is not None
+    assert spesa.brand_name == "Keytruda"
+    # Vince l'anno più recente disponibile.
+    assert spesa.year == 2024
+    assert spesa.avg_spend_per_beneficiary_usd == 73481.0
+    assert spesa.medicare_part == "D"
+
+
+@respx.mock
+def test_ripiega_su_part_b_se_non_e_in_part_d() -> None:
+    """Gran parte dell'oncologia infusa sta in Part B, non in Part D."""
+    from biocatalyst.data.drug_pricing import PART_B_URL, PART_D_URL, DrugPricingProvider
+
+    respx.get(PART_D_URL).mock(return_value=httpx.Response(200, json=[]))
+    respx.get(PART_B_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"Brnd_Name": "Opdivo", "Avg_Spndng_Per_Bene_2024": 72883.0}],
+        )
+    )
+
+    spesa = DrugPricingProvider(max_retries=1).get_spending("Opdivo")
+
+    assert spesa is not None
+    assert spesa.medicare_part == "B"
+    # Part B usa un nome di campo diverso per la stessa misura.
+    assert spesa.avg_spend_per_beneficiary_usd == 72883.0
+
+
+@respx.mock
+def test_farmaco_non_in_medicare_restituisce_none() -> None:
+    """Non verificabile va dichiarato, non inventato."""
+    from biocatalyst.data.drug_pricing import PART_B_URL, PART_D_URL, DrugPricingProvider
+
+    respx.get(PART_D_URL).mock(return_value=httpx.Response(200, json=[]))
+    respx.get(PART_B_URL).mock(return_value=httpx.Response(200, json=[]))
+
+    assert DrugPricingProvider(max_retries=1).get_spending("Inesistente") is None
+
+
+def test_nome_vuoto_non_interroga_la_fonte() -> None:
+    from biocatalyst.data.drug_pricing import DrugPricingProvider
+
+    assert DrugPricingProvider(max_retries=1).get_spending("   ") is None
+
+
+@respx.mock
+def test_riga_senza_spesa_utilizzabile_viene_scartata() -> None:
+    from biocatalyst.data.drug_pricing import PART_B_URL, PART_D_URL, DrugPricingProvider
+
+    respx.get(PART_D_URL).mock(
+        return_value=httpx.Response(200, json=[{"Brnd_Name": "X", "Avg_Spnd_Per_Bene_2024": 0}])
+    )
+    respx.get(PART_B_URL).mock(return_value=httpx.Response(200, json=[]))
+
+    assert DrugPricingProvider(max_retries=1).get_spending("X") is None

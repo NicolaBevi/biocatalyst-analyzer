@@ -13,7 +13,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from biocatalyst.models.raw_data import SectorSentiment
+from biocatalyst.models.raw_data import DrugSpending, SectorSentiment
 
 
 class FinancialMetrics(BaseModel):
@@ -83,6 +83,14 @@ class TAMEstimate(BaseModel):
     indication: str
     prevalence_estimate: str
     pricing_comparable: str
+    #: Nome del farmaco comparabile citato dal modello. Serve al sistema per
+    #: cercarne il prezzo reale nei dati di spesa Medicare: il modello sceglie
+    #: il comparatore (giudizio di dominio), il sistema ne verifica il prezzo.
+    comparable_drug_name: str | None = None
+    #: Spesa Medicare effettiva per quel farmaco, se reperita. None significa
+    #: "non verificabile", e va dichiarato invece di far passare per dato la
+    #: cifra del modello.
+    verified_pricing: DrugSpending | None = None
     tam_low_usd: float | None = Field(default=None, ge=0)
     tam_high_usd: float | None = Field(default=None, ge=0)
     methodology_notes: str

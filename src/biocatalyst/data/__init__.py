@@ -13,6 +13,7 @@ from biocatalyst.data.base import (
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.data.clinical_trials import ClinicalTrialsProvider
+from biocatalyst.data.drug_pricing import DrugPricingProvider
 from biocatalyst.data.factory import DataProviders, build_data_providers
 from biocatalyst.data.fda import FDAProvider
 from biocatalyst.data.forex import ExchangeRate, ForexProvider
@@ -30,6 +31,7 @@ __all__ = [
     "DataParseError",
     "DataProviderError",
     "DataProviders",
+    "DrugPricingProvider",
     "DataRateLimitError",
     "DataUnavailableError",
     "ExchangeRate",

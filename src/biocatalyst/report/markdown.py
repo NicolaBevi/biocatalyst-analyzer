@@ -102,8 +102,17 @@ def render_markdown(report: Report) -> str:
                 f"- {_fmt(report.tam.tam_low_usd, '$', decimals=0)} – "
                 f"{_fmt(report.tam.tam_high_usd, '$', decimals=0)}"
             )
+        vp = report.tam.verified_pricing
+        if vp is not None:
+            parts.append(
+                f"- **{lb('verified_pricing')}**: {vp.brand_name} — "
+                f"${vp.avg_spend_per_beneficiary_usd:,.0f} {lb('per_beneficiary')} "
+                f"(Medicare Part {vp.medicare_part}, {vp.year}, CMS)"
+            )
         parts.append(f"\n{report.tam.methodology_notes}\n")
         parts.append(_nota(ex("tam")))
+        if vp is not None:
+            parts.append(_nota(ex("verified_pricing")))
 
     # --- Catalizzatori --------------------------------------------------------
     parts.append(f"\n## {lb('sec_catalyst')}\n")

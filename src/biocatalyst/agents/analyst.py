@@ -17,6 +17,8 @@ from biocatalyst.agents.base import KEY_ANALYSIS, KEY_RAW_DATA, BaseAgent, appen
 from biocatalyst.agents.prompts import ANALYST_SYSTEM
 from biocatalyst.analysis import catalysts_from_trials, compute_financial_metrics
 from biocatalyst.analysis.catalysts import is_event_driven, materiality, overdue_days
+from biocatalyst.data.base import DataProviderError
+from biocatalyst.data.factory import DataProviders
 from biocatalyst.i18n import t
 from biocatalyst.llm.base import BaseLLMProvider, LLMError, Message
 from biocatalyst.llm.structured import complete_structured
@@ -24,6 +26,7 @@ from biocatalyst.log import get_logger
 from biocatalyst.models.analysis import (
     AnalysisBundle,
     Catalyst,
+    TAMEstimate,
     TrialAndMarketAssessment,
 )
 from biocatalyst.models.raw_data import ClinicalTrial, CompanyRawData
@@ -39,10 +42,12 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
     def __init__(
         self,
         provider: BaseLLMProvider,
+        providers: DataProviders | None = None,
         language: ReportLanguage = "en",
         max_tokens: int = 8_000,
     ) -> None:
         self.provider = provider
+        self.providers = providers
         self.language = language
         self.max_tokens = max_tokens
 
@@ -72,7 +77,7 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             assessment = self._assess(raw, lead_trial, notes)
             if assessment is not None:
                 clinical_assessment = assessment.clinical
-                tam = assessment.tam
+                tam = self._verify_pricing(assessment.tam)
         else:
             notes.append(t(self.language, "agent.no_lead_trial"))
 
@@ -103,7 +108,13 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             f"- Completamento atteso: {trial.primary_completion_date or 'non disponibile'}\n"
             f"- Patologia: {', '.join(trial.condition) or 'non specificata'}\n"
             f"{_nota_ritardo(trial)}\n"
-            "Valuta criticamente lo studio e stima il mercato potenziale del farmaco."
+            "Valuta criticamente lo studio e stima il mercato potenziale del farmaco.\n"
+            "Nel campo comparable_drug_name indica il NOME COMMERCIALE di un solo "
+            "farmaco già approvato e commercializzato negli Stati Uniti che serva da "
+            "riferimento di prezzo per questa indicazione.\n"
+            "Il campo verified_pricing lo compila il sistema dopo la tua risposta, "
+            "cercando la spesa Medicare reale per quel farmaco: lascialo nullo e non "
+            "commentarlo, perché non puoi sapere cosa vi troverà."
         )
         try:
             return complete_structured(
@@ -117,6 +128,32 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             logger.warning("valutazione_analista_fallita", errore=str(exc)[:300])
             notes.append(t(self.language, "agent.assessment_failed", error=exc))
             return None
+
+    def _verify_pricing(self, tam: TAMEstimate) -> TAMEstimate:
+        """Cerca il prezzo reale del comparatore citato dal modello.
+
+        Il modello sceglie quale farmaco sia il comparatore giusto — è un
+        giudizio di dominio — ma la cifra la mette il sistema, prendendola dai
+        dati di spesa Medicare. Se il farmaco non compare, `verified_pricing`
+        resta nullo e il report lo dichiara invece di far passare per dato la
+        stima del modello.
+        """
+        if self.providers is None or not tam.comparable_drug_name:
+            return tam
+        try:
+            spesa = self.providers.drug_pricing.get_spending(tam.comparable_drug_name)
+        except DataProviderError as exc:
+            logger.warning("verifica_prezzo_fallita", errore=str(exc)[:200])
+            return tam
+        if spesa is None:
+            return tam
+        logger.info(
+            "prezzo_comparatore_verificato",
+            farmaco=spesa.brand_name,
+            spesa_per_beneficiario=round(spesa.avg_spend_per_beneficiary_usd),
+            anno=spesa.year,
+        )
+        return tam.model_copy(update={"verified_pricing": spesa})
 
 
 def _nota_ritardo(trial: ClinicalTrial) -> str:

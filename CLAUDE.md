@@ -57,6 +57,7 @@ src/biocatalyst/
 │   ├── sec.py      #   ticker->CIK, XBRL companyfacts, full-text search
 │   ├── market.py   #   yfinance: quotazione/float/short + sentiment XBI-IBB
 │   ├── clinical_trials.py, fda.py, news.py, forex.py
+│   ├── drug_pricing.py # spesa Medicare per farmaco (CMS), ancora il TAM
 │   ├── universe.py #   universo biotech da codici SIC SEC
 │   └── factory.py  #   build_data_providers(settings) -> DataProviders
 ├── analysis/       # calcoli deterministici — FATTO (Fase 4), copertura 100%
@@ -150,6 +151,9 @@ src/biocatalyst/
 | **Il ritardo di uno studio si dimensiona sulla durata pianificata** | Richiede `start_date`, che il modello non catturava. REGAL: 58 mesi pianificati, 8,8 di ritardo = 15% oltre il piano. Senza questo riferimento "in ritardo di 268 giorni" è un numero che il modello non sa pesare |
 | **Il prompt chiede di confrontare il ritardo con la sopravvivenza storica del controllo** | Su uno studio a eventi con comparatore a prognosi nota, un ritardo superiore alla mediana storica del controllo è un'informazione quantitativa. Non si codifica "ritardo = rialzista" — sarebbe la stima silenziosa che il progetto vieta — ma si dà al modello il riferimento per ragionarci |
 | **La chiave di cache include l'impronta dei campi richiesti** | Bug trovato aggiungendo `StartDate`: la chiave non cambiava, la risposta vecchia restava valida e il campo nuovo risultava assente **senza alcun errore**. È il tipo di guasto peggiore, quello silenzioso |
+| **Il prezzo del comparatore è verificato sui dati CMS, non lasciato al modello** | La stima del TAM era l'unica parte del report che poggiava interamente sulla memoria del modello. CMS pubblica la spesa Medicare effettiva per farmaco, compresa la media annua per beneficiario. Ora il modello sceglie *quale* farmaco sia il comparatore (giudizio di dominio) e il sistema ne verifica il prezzo. Su SLS il modello dichiarava $240-300k di listino per Onureg, il dato CMS dice **$129.238**: circa la metà. Se il farmaco non è nei dati Medicare, `verified_pricing` resta nullo e il report lo dichiara |
+| **Il modello non deve commentare `verified_pricing`** | La verifica avviene *dopo* la sua risposta, quindi scriveva "no Medicare data were supplied, verified_pricing is null" mentre il report poi lo mostrava compilato. Il prompt ora glielo dice esplicitamente |
+| **Rimosse `responses` e `vcrpy` dalle dipendenze di sviluppo** | Sostituite da `respx` in Fase 3 ma mai tolte: nessun import in tutto il progetto |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
@@ -175,6 +179,7 @@ src/biocatalyst/
 - **openFDA usa date compatte** (`"20160523"`) e risponde **404 quando non ci sono risultati**: per una biotech clinical-stage senza farmaci approvati è l'esito normale, tradotto in lista vuota e non in errore.
 - **yfinance `shortPercentOfFloat` è una frazione** (0,0125 = 1,25%): normalizzato a percentuale nel provider. Trattarlo come percentuale sbaglierebbe di 100× lo squeeze score.
 - **yfinance `dateShortInterest` è un timestamp Unix**, non una data ISO.
+- **CMS Medicare spending by drug** (`data.cms.gov/data-api/v1/dataset/...`): gratis, nessuna key. Part D (farmacia) e Part B (ambulatoriale, dove sta l'oncologia infusa) usano nomi di campo diversi per la stessa misura (`Avg_Spnd_Per_Bene_YYYY` contro `Avg_Spndng_Per_Bene_YYYY`). Copre la sola popolazione Medicare: è un ordine di grandezza al netto di parte degli sconti, non un prezzo di listino.
 - **Frankfurter nei weekend/festivi** restituisce silenziosamente l'ultimo giorno lavorativo: si cita sempre la data *della risposta*, non quella richiesta.
 
 ## Non verificato (dichiarato, non nascosto)

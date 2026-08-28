@@ -214,7 +214,7 @@ def _valuta_titolo(
         appetite=appetite,
     )
 
-    assert market.price is not None and market.market_cap_usd is not None  # noqa: S101
+    assert market.price is not None and market.market_cap_usd is not None
     return ScreenCandidate(
         ticker=ticker,
         company_name=company_name,

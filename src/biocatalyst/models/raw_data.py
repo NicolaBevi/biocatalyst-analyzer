@@ -97,6 +97,23 @@ class FDAApproval(BaseModel):
     marketing_status: str | None = None
 
 
+class DrugSpending(BaseModel):
+    """Spesa Medicare effettiva per un farmaco (fonte: CMS).
+
+    Serve ad ancorare la stima del TAM a un prezzo reale invece che alla
+    memoria del modello. Copre la sola popolazione Medicare, quindi è un
+    ordine di grandezza, non un prezzo di listino.
+    """
+
+    brand_name: str
+    generic_name: str | None = None
+    year: int
+    avg_spend_per_beneficiary_usd: float = Field(gt=0)
+    total_spend_usd: float | None = Field(default=None, ge=0)
+    beneficiaries: int | None = Field(default=None, ge=0)
+    medicare_part: Literal["B", "D"]
+
+
 class NewsItem(BaseModel):
     """Da Finnhub (fonte primaria) o Google News RSS (fallback opzionale)."""
 

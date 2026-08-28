@@ -141,7 +141,7 @@ def catalysts_from_trials(
         if not is_pending(trial, reference):
             continue
         completion = trial.primary_completion_date
-        assert completion is not None  # garantito da is_pending  # noqa: S101
+        assert completion is not None  # garantito da is_pending
 
         ritardo = overdue_days(trial, reference)
         fuori_finestra = (
