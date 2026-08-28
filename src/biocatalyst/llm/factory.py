@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from biocatalyst.config import LLMProviderName, Settings, get_settings
+from biocatalyst.data.cache import DataCache
 from biocatalyst.llm.anthropic_provider import AnthropicProvider
 from biocatalyst.llm.base import BaseLLMProvider, LLMConfigurationError
 from biocatalyst.llm.gemini_provider import GeminiProvider
@@ -28,8 +29,13 @@ def build_provider(
     provider: LLMProviderName,
     model: str | None = None,
     settings: Settings | None = None,
+    cache: DataCache | None = None,
 ) -> BaseLLMProvider:
-    """Istanzia un provider. `model=None` usa il default della classe del provider."""
+    """Istanzia un provider. `model=None` usa il default della classe del provider.
+
+    Se `cache` è dato, le risposte vengono conservate e riutilizzate a parità
+    di prompt: è ciò che rende ripetibile un report.
+    """
     settings = settings or get_settings()
 
     provider_class = PROVIDER_REGISTRY.get(provider)
@@ -42,6 +48,8 @@ def build_provider(
             base_url=settings.ollama_base_url,
             timeout=settings.llm_request_timeout_seconds,
             max_retries=settings.llm_max_retries,
+            cache=cache,
+            cache_ttl_seconds=settings.cache_ttl_llm_seconds,
         )
 
     api_key = settings.api_key_for(provider)
@@ -57,14 +65,18 @@ def build_provider(
         timeout=settings.llm_request_timeout_seconds,
         max_retries=settings.llm_max_retries,
         stream=settings.llm_use_streaming,
+        cache=cache,
+        cache_ttl_seconds=settings.cache_ttl_llm_seconds,
     )
 
 
-def provider_for_agent(agent: str, settings: Settings | None = None) -> BaseLLMProvider:
+def provider_for_agent(
+    agent: str, settings: Settings | None = None, cache: DataCache | None = None
+) -> BaseLLMProvider:
     """Provider da usare per un agente, secondo gli override AGENT_*_PROVIDER del .env."""
     settings = settings or get_settings()
     provider_name, model = settings.resolve_agent_provider(agent)
-    instance = build_provider(provider_name, model, settings)
+    instance = build_provider(provider_name, model, settings, cache)
     logger.debug(
         "provider_risolto",
         agente=agent,

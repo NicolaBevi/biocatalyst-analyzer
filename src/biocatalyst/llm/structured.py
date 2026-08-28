@@ -59,6 +59,7 @@ def complete_structured(
     schema: type[T],
     max_tokens: int = 8_000,
     temperature: float | None = None,
+    seed: int | None = None,
     parse_attempts: int = 2,
 ) -> T:
     """Ottiene una risposta validata contro `schema`.
@@ -81,6 +82,7 @@ def complete_structured(
             conversation,
             max_tokens=max_tokens,
             temperature=temperature,
+            seed=seed,
             **kwargs,
         )
 

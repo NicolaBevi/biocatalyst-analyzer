@@ -41,6 +41,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     #: Verificato su DeepSeek: l'endpoint chat/completions accetta
     #: response_format={"type": "json_object"}.
     supports_json_mode: ClassVar[bool] = True
+    #: Il protocollo OpenAI prevede `seed` per un campionamento ripetibile.
+    supports_seed: ClassVar[bool] = True
 
     #: Verificato su DeepSeek: anche i modelli di ragionamento inviano i chunk
     #: con continuità (intervallo massimo osservato fra chunk: 0,7s).

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Literal
 
@@ -13,6 +15,7 @@ from tenacity import (
 )
 
 from biocatalyst.config import LLMProviderName
+from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
 
 logger = get_logger(__name__)
@@ -93,6 +96,13 @@ class BaseLLMProvider(ABC):
     #: invece di far esplodere la chiamata.
     supports_temperature: ClassVar[bool] = True
 
+    #: Se il provider accetta un `seed` per rendere ripetibile il
+    #: campionamento. Lo espone solo chi parla il protocollo OpenAI; sugli
+    #: altri il parametro viene scartato con un warning, come `temperature`.
+    #: Nemmeno dove è accettato garantisce output identici — riduce la
+    #: dispersione, non la azzera.
+    supports_seed: ClassVar[bool] = False
+
     #: Se il provider accetta `response_format={"type": "json_object"}`,
     #: che rende molto più affidabile l'output strutturato.
     supports_json_mode: ClassVar[bool] = False
@@ -116,12 +126,16 @@ class BaseLLMProvider(ABC):
         timeout: int = 60,
         max_retries: int = 3,
         stream: bool = False,
+        cache: DataCache | None = None,
+        cache_ttl_seconds: int = 86_400,
     ) -> None:
         self.model = model or self.default_model
         self._api_key = api_key
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
         self.stream = stream and self.supports_streaming
+        self.cache = cache
+        self.cache_ttl_seconds = cache_ttl_seconds
 
     def __repr__(self) -> str:
         # Nessuna API key nel repr: questo oggetto può finire in un log o in un traceback.
@@ -144,9 +158,19 @@ class BaseLLMProvider(ABC):
         *,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        seed: int | None = None,
         **kwargs: Any,
     ) -> str:
         """Esegue una completion, con retry automatico sugli errori transitori."""
+        if seed is not None:
+            if self.supports_seed:
+                kwargs["seed"] = seed
+            else:
+                logger.warning(
+                    "seed_non_supportato_ignorato",
+                    provider=self.name.value,
+                    model=self.model,
+                )
         if temperature is not None and not self.supports_temperature:
             logger.warning(
                 "temperature_non_supportata_ignorata",
@@ -156,22 +180,66 @@ class BaseLLMProvider(ABC):
             )
             temperature = None
 
-        retryer: Retrying = Retrying(
-            stop=stop_after_attempt(self.max_retries),
-            wait=wait_exponential_jitter(initial=self.retry_initial_wait, max=self.retry_max_wait),
-            retry=retry_if_exception_type(RETRYABLE_ERRORS),
-            before_sleep=self._log_retry,
-            reraise=True,
+        def esegui() -> str:
+            retryer: Retrying = Retrying(
+                stop=stop_after_attempt(self.max_retries),
+                wait=wait_exponential_jitter(
+                    initial=self.retry_initial_wait, max=self.retry_max_wait
+                ),
+                retry=retry_if_exception_type(RETRYABLE_ERRORS),
+                before_sleep=self._log_retry,
+                reraise=True,
+            )
+            risposta: str = retryer(
+                self._complete,
+                system,
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs,
+            )
+            return risposta
+
+        # TTL non positivo = cache disattivata: è il modo documentato per
+        # forzare una risposta nuova senza toccare il resto della cache.
+        if self.cache is None or self.cache_ttl_seconds <= 0:
+            return esegui()
+        return self.cache.get_or_fetch(
+            self._cache_key(system, messages, max_tokens, temperature, kwargs),
+            self.cache_ttl_seconds,
+            esegui,
         )
-        result: str = retryer(
-            self._complete,
-            system,
-            messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            **kwargs,
+
+    def _cache_key(
+        self,
+        system: str,
+        messages: list[Message],
+        max_tokens: int,
+        temperature: float | None,
+        kwargs: dict[str, Any],
+    ) -> str:
+        """Impronta della richiesta: identifica una risposta riutilizzabile.
+
+        Comprende il prompt per intero, e il prompt contiene i dati raccolti:
+        cambiando il prezzo o arrivando un nuovo filing la chiave cambia da
+        sola e il report si rigenera. Finché i dati sono gli stessi, invece, la
+        risposta è la stessa — che è precisamente ciò che serve perché due
+        esecuzioni ravvicinate non diano numeri diversi.
+        """
+        impronta = json.dumps(
+            {
+                "provider": self.name.value,
+                "model": self.model,
+                "system": system,
+                "messages": [(m.role, m.content) for m in messages],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "kwargs": {k: str(v) for k, v in sorted(kwargs.items())},
+            },
+            ensure_ascii=False,
+            sort_keys=True,
         )
-        return result
+        return f"llm:{hashlib.sha256(impronta.encode()).hexdigest()[:32]}"
 
     def _log_retry(self, retry_state: RetryCallState) -> None:
         exc = retry_state.outcome.exception() if retry_state.outcome else None

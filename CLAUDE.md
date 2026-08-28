@@ -166,6 +166,9 @@ src/biocatalyst/
 | **La sigla "ALL" esclusa dalle parole chiave** | Come parola intera coincide con l'inglese "all": classificava "all solid tumors" fra i tumori del sangue. Stessa famiglia di errore già vista con "OS" dentro "dose" |
 | **Elenco delle cifre non verificate in fondo al report** | La prosa mescola numeri misurati e numeri che il modello ricorda ("la sopravvivenza mediana storica è 6-12 mesi"), stampati uguali e quindi apparentemente ugualmente solidi. Ora le cifre senza riscontro nei dati raccolti sono elencate a parte. Misurato su SLS: **una sola segnalazione**, genuina. È una rete, non una garanzia — con 150+ valori noti una cifra può coincidere per caso — e il report lo dichiara |
 | **La raccolta dei valori noti include le proprietà calcolate** | I mesi di slittamento esistono solo come proprietà, non come campo: senza guardarle il "48 mesi" del testo risultava non verificato pur essendo un nostro calcolo |
+| **Le risposte dell'LLM vanno in cache: è così che un report diventa ripetibile** | L'utente ha segnalato che rigenerare lo stesso report dava numeri diversi. Verificato: due analisi di SLS a poche ore di distanza, stessi dati, expected value +19,1% e -27,8%. La chiave di cache è l'impronta del prompt intero, e il prompt contiene i dati raccolti: se i dati cambiano il report si rifà da solo, se non cambiano la risposta è la stessa. Non costa, anzi risparmia |
+| **`temperature=0` e `seed` NON bastano** (misurato, non ipotizzato) | Sembrava la soluzione ovvia. L'API DeepSeek accetta entrambi i parametri, ma sui modelli di ragionamento non li onora: su tre chiamate identiche a `deepseek-v4-flash` con `temperature=0, seed=7` la probabilità bull è uscita 0,70 / 0,15 / 0,55 — dispersione pari a quella del default. La conduttura è comunque implementata (`supports_seed`, `LLM_TEMPERATURE`) perché è corretta e altri provider la onorano, ma il rimedio vero è la cache |
+| **`generated_at` riporta l'età reale del dato, non l'ora di esecuzione** | Il file dichiarava da sempre `datetime.now()`, quindi un report costruito su filing di ieri si presentava come appena raccolto. Con la cache delle risposte il caso è diventato la norma, non l'eccezione. `DataCache` ora ricorda quando è stato scritto il più vecchio dei dati serviti (ricavato da `expire_time - ttl`, senza cambiare il formato già in cache) e il collector usa quello |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
@@ -193,6 +196,37 @@ src/biocatalyst/
 - **yfinance `dateShortInterest` è un timestamp Unix**, non una data ISO.
 - **CMS Medicare spending by drug** (`data.cms.gov/data-api/v1/dataset/...`): gratis, nessuna key. Part D (farmacia) e Part B (ambulatoriale, dove sta l'oncologia infusa) usano nomi di campo diversi per la stessa misura (`Avg_Spnd_Per_Bene_YYYY` contro `Avg_Spndng_Per_Bene_YYYY`). Copre la sola popolazione Medicare: è un ordine di grandezza al netto di parte degli sconti, non un prezzo di listino.
 - **Frankfurter nei weekend/festivi** restituisce silenziosamente l'ultimo giorno lavorativo: si cita sempre la data *della risposta*, non quella richiesta.
+
+## Ripetibilità (misurata su SLS, ALT, GALT, CAPR)
+
+Rigenerando lo stesso report due volte di fila, con la cache attiva:
+
+| Ticker | Esito | Tempi |
+|---|---|---|
+| SLS | identico | 4s → 4s |
+| ALT | identico | 198s → 4s |
+| GALT | identico | 284s → 4s |
+| CAPR | identico | 158s → 4s |
+
+Il confronto è sul JSON intero, campo per campo. Il crollo dei tempi è la
+cache delle risposte LLM: la seconda esecuzione non chiama i modelli.
+
+**Il limite che resta, misurato.** La cache garantisce che due esecuzioni *con
+gli stessi dati* diano lo stesso report, non che il giudizio del modello sia
+stabile in sé. Tre esecuzioni di SLS con `--no-cache`, a prezzo praticamente
+fermo (13,755 / 13,800 / 13,795):
+
+| | rating | prob. bull | target bull | EV |
+|---|---|---|---|---|
+| 1 | SELL | 0,15 | $30,00 | −32,8% |
+| 2 | HOLD | 0,18 | $28,00 | −17,1% |
+| 3 | HOLD | 0,15 | $35,00 | −5,0% |
+
+Il rating oscilla fra SELL e HOLD e l'EV copre 28 punti. **La dispersione però
+non viene dalle probabilità** — quelle stanno in 0,15-0,18 — **ma dal target
+price dello scenario rialzista**, che va da $28 a $35. È l'informazione utile:
+un eventuale campionamento ripetuto va applicato ai target, non alle
+probabilità. Non implementato: costerebbe 2-3 chiamate in più per report.
 
 ## Non verificato (dichiarato, non nascosto)
 

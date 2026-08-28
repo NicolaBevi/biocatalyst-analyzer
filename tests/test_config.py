@@ -54,3 +54,15 @@ def test_secret_values_are_masked_in_repr(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert "sk-ant-super-secret" not in repr(settings.anthropic_api_key)
     assert "sk-ant-super-secret" not in str(settings.anthropic_api_key)
+
+
+def test_il_campionamento_e_deterministico_per_default() -> None:
+    """Due analisi dello stesso titolo nello stesso giorno devono coincidere.
+
+    Lasciata al default dell'API (tipicamente 1,0) la temperatura faceva
+    ballare le probabilità degli scenari, e con loro l'expected value: misurato
+    su SLS, +19,1% e -27,8% a poche ore di distanza sugli stessi dati.
+    """
+    settings = Settings(sec_edgar_user_agent="test test@example.com")
+    assert settings.llm_temperature == 0.0
+    assert settings.llm_seed is not None

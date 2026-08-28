@@ -51,11 +51,15 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
         providers: DataProviders | None = None,
         language: ReportLanguage = "en",
         max_tokens: int = 8_000,
+        temperature: float | None = 0.0,
+        seed: int | None = 1,
     ) -> None:
         self.provider = provider
         self.providers = providers
         self.language = language
         self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.seed = seed
 
     def _run(self, context: dict[str, Any]) -> dict[str, Any]:
         raw: CompanyRawData = context[KEY_RAW_DATA]
@@ -155,6 +159,8 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
                 [Message(role="user", content=prompt)],
                 TrialAndMarketAssessment,
                 max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                seed=self.seed,
             )
         except LLMError as exc:
             logger.warning("valutazione_analista_fallita", errore=str(exc)[:300])

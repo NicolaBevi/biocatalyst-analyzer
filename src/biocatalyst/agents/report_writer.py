@@ -99,11 +99,15 @@ class ReportWriterAgent(BaseAgent):
         providers: DataProviders,
         language: ReportLanguage = "en",
         max_tokens: int = 16_000,
+        temperature: float | None = 0.0,
+        seed: int | None = 1,
     ) -> None:
         self.provider = provider
         self.providers = providers
         self.language = language
         self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.seed = seed
 
     def _run(self, context: dict[str, Any]) -> dict[str, Any]:
         raw: CompanyRawData = context[KEY_RAW_DATA]
@@ -124,6 +128,8 @@ class ReportWriterAgent(BaseAgent):
             [Message(role="user", content=_build_prompt(raw, analysis, market_context, price))],
             ReportDraft,
             max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            seed=self.seed,
         )
 
         # Da qui in poi è tutta aritmetica del codice.

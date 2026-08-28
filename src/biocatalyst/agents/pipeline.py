@@ -32,9 +32,27 @@ def build_pipeline(
     language = language or settings.report_language
     return [
         DataCollectorAgent(providers, language),
-        ClinicalFinancialAnalystAgent(provider_for_agent("analyst", settings), providers, language),
-        MarketNewsAgent(provider_for_agent("news", settings), providers, language),
-        ReportWriterAgent(provider_for_agent("writer", settings), providers, language),
+        ClinicalFinancialAnalystAgent(
+            provider_for_agent("analyst", settings, providers.cache),
+            providers,
+            language,
+            temperature=settings.llm_temperature,
+            seed=settings.llm_seed,
+        ),
+        MarketNewsAgent(
+            provider_for_agent("news", settings, providers.cache),
+            providers,
+            language,
+            temperature=settings.llm_temperature,
+            seed=settings.llm_seed,
+        ),
+        ReportWriterAgent(
+            provider_for_agent("writer", settings, providers.cache),
+            providers,
+            language,
+            temperature=settings.llm_temperature,
+            seed=settings.llm_seed,
+        ),
     ]
 
 

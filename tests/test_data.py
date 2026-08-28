@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1039,3 +1039,37 @@ def test_schedule_history_senza_rinvii() -> None:
     assert storia.times_postponed == 0
     assert storia.changes == []
     assert storia.total_slip_days == 0
+
+
+# --- Età dei dati serviti dalla cache ----------------------------------------
+
+
+def test_la_cache_ricorda_l_eta_del_dato_piu_vecchio(tmp_path: Path) -> None:
+    """Un report servito da cache non deve dichiararsi fresco.
+
+    `generated_at` dice al lettore a quando risalgono i dati: se arriva tutto
+    da ieri, scrivere l'ora corrente sarebbe un'affermazione falsa.
+    """
+    cache = DataCache(tmp_path / "c")
+    assert cache.oldest_hit_at is None, "nessun dato servito, nessuna età"
+
+    cache.get_or_fetch("k", 3600, lambda: {"v": 1})
+    assert cache.oldest_hit_at is None, "una scrittura non è un dato vecchio"
+
+    cache.get_or_fetch("k", 3600, lambda: {"v": 2})
+    assert cache.oldest_hit_at is not None
+    scarto = abs((datetime.now(UTC) - cache.oldest_hit_at).total_seconds())
+    assert scarto < 60, "appena scritto: l'età deve essere quasi zero"
+
+
+def test_vince_il_dato_piu_vecchio_fra_quelli_serviti(tmp_path: Path) -> None:
+    cache = DataCache(tmp_path / "c")
+    cache.get_or_fetch("vecchio", 86_400, lambda: 1)
+    cache.get_or_fetch("nuovo", 900, lambda: 2)
+
+    cache.get_or_fetch("nuovo", 900, lambda: 2)
+    dopo_il_nuovo = cache.oldest_hit_at
+    cache.get_or_fetch("vecchio", 86_400, lambda: 1)
+
+    assert dopo_il_nuovo is not None and cache.oldest_hit_at is not None
+    assert cache.oldest_hit_at <= dopo_il_nuovo

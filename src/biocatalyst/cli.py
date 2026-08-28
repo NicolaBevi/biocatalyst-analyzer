@@ -169,7 +169,15 @@ def analyze(
         typer.Option("--provider", "-p", help="Force one LLM provider for every agent"),
     ] = None,
     no_cache: Annotated[
-        bool, typer.Option("--no-cache", help="Bypass the cache and re-query every source")
+        bool,
+        typer.Option(
+            "--no-cache",
+            help=(
+                "Bypass the cache: re-query every source and ask the models again. "
+                "Without it, re-running the same analysis reuses the stored answers "
+                "and reproduces the same report."
+            ),
+        ),
     ] = False,
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Show detailed agent logs")

@@ -29,6 +29,19 @@ class DataCollectorAgent(BaseAgent):
         self.providers = providers
         self.language = language
 
+    def _retrieved_at(self) -> datetime:
+        """Momento a cui i dati si riferiscono davvero.
+
+        Se qualcosa è arrivato dalla cache, il report non deve dichiararsi
+        fresco: si prende il più vecchio fra i dati serviti. È la data che il
+        lettore vede accanto al report, e deve poterci contare.
+        """
+        adesso = datetime.now(UTC)
+        piu_vecchio = getattr(self.providers.cache, "oldest_hit_at", None)
+        if not isinstance(piu_vecchio, datetime):
+            return adesso
+        return min(adesso, piu_vecchio)
+
     def _run(self, context: dict[str, Any]) -> dict[str, Any]:
         ticker: str = context[KEY_TICKER]
         missing: list[str] = []
@@ -82,7 +95,7 @@ class DataCollectorAgent(BaseAgent):
         raw = CompanyRawData(
             ticker=ticker.upper(),
             company_name=company_name,
-            retrieved_at=datetime.now(UTC),
+            retrieved_at=self._retrieved_at(),
             market_data=market_data,
             quarterly_financials=financials or [],
             filing_signals=filing_signals,

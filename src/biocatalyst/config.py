@@ -60,6 +60,22 @@ class Settings(BaseSettings):
     cache_ttl_price_seconds: int = 900
     cache_ttl_filing_seconds: int = 86_400
     cache_ttl_trial_seconds: int = 86_400
+    #: TTL delle risposte dell'LLM. È ciò che rende ripetibile un report:
+    #: stesso prompt (quindi stessi dati) entro questo intervallo, stessa
+    #: risposta. Zero disattiva la cache delle risposte.
+    cache_ttl_llm_seconds: int = 86_400
+
+    # --- Riproducibilità del report -------------------------------------------
+    #: Temperatura di campionamento. **Zero per default**: due analisi dello
+    #: stesso titolo nello stesso giorno devono dare lo stesso report. Lasciata
+    #: al default dell'API (tipicamente 1,0) le probabilità degli scenari
+    #: ballavano fra un'esecuzione e l'altra, e con loro l'expected value —
+    #: misurato su SLS: +19,1% e -27,8% a poche ore di distanza, stessi dati.
+    llm_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    #: Seme del campionamento, dove il provider lo accetta (protocollo OpenAI).
+    #: Non garantisce l'identità bit a bit — nessun provider la promette — ma
+    #: toglie una fonte di dispersione. `None` per lasciar fare all'API.
+    llm_seed: int | None = 1
 
     # --- Resilienza di rete -----------------------------------------------------------
     llm_request_timeout_seconds: int = 60

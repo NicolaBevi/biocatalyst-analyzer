@@ -40,6 +40,8 @@ class MarketNewsAgent(BaseAgent):
         providers: DataProviders,
         language: ReportLanguage = "en",
         max_tokens: int = 8_000,
+        temperature: float | None = 0.0,
+        seed: int | None = 1,
         news_days: int = 30,
         sentiment_days: int = 30,
     ) -> None:
@@ -47,6 +49,8 @@ class MarketNewsAgent(BaseAgent):
         self.providers = providers
         self.language = language
         self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.seed = seed
         self.news_days = news_days
         self.sentiment_days = sentiment_days
 
@@ -102,6 +106,8 @@ class MarketNewsAgent(BaseAgent):
                 [Message(role="user", content=prompt)],
                 MarketContext,
                 max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                seed=self.seed,
             )
         except LLMError as exc:
             logger.warning("contesto_mercato_fallito", errore=str(exc)[:300])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
@@ -13,6 +14,7 @@ from google.genai import errors as genai_errors
 from pydantic import SecretStr
 
 from biocatalyst.config import LLMProviderName, Settings
+from biocatalyst.data.cache import DataCache
 from biocatalyst.llm import (
     PROVIDER_REGISTRY,
     AnthropicProvider,
@@ -62,6 +64,7 @@ class FakeProvider(BaseLLMProvider):
         self.errors = errors or []
         self.calls = 0
         self.last_temperature: float | None = None
+        self.last_kwargs: dict[str, Any] = {}
 
     def _complete(
         self,
@@ -74,6 +77,7 @@ class FakeProvider(BaseLLMProvider):
     ) -> str:
         self.calls += 1
         self.last_temperature = temperature
+        self.last_kwargs = dict(kwargs)
         if self.errors:
             raise self.errors.pop(0)
         return "risposta ok"
@@ -150,6 +154,32 @@ def test_temperature_scartata_se_non_supportata() -> None:
 def test_anthropic_dichiara_di_non_supportare_temperature() -> None:
     # L'SDK anthropic 1.x ha rimosso temperature da messages.create().
     assert AnthropicProvider.supports_temperature is False
+
+
+# --- Riproducibilità: seed ----------------------------------------------------
+
+
+def test_seed_propagato_a_chi_lo_supporta() -> None:
+    class SeedProvider(FakeProvider):
+        supports_seed: ClassVar[bool] = True
+
+    provider = SeedProvider(api_key=SecretStr("k"))
+    provider.complete("sys", [Message(role="user", content="x")], seed=42)
+    assert provider.last_kwargs.get("seed") == 42
+
+
+def test_seed_scartato_da_chi_non_lo_supporta() -> None:
+    """Solo il protocollo OpenAI prevede `seed`: altrove esploderebbe."""
+    provider = FakeProvider(api_key=SecretStr("k"))
+    provider.complete("sys", [Message(role="user", content="x")], seed=42)
+    assert "seed" not in provider.last_kwargs
+
+
+def test_i_provider_openai_compatibili_dichiarano_il_seed() -> None:
+    from biocatalyst.llm.openai_compatible import OpenAICompatibleProvider
+
+    assert OpenAICompatibleProvider.supports_seed is True
+    assert AnthropicProvider.supports_seed is False
 
 
 # --- Sicurezza: nessun segreto nei log ----------------------------------------
@@ -555,3 +585,87 @@ def test_anthropic_token_esauriti_non_e_ritentabile() -> None:
         provider.complete("sys", [Message(role="user", content="x")], max_tokens=20)
 
     assert client.messages.create.call_count == 1
+
+
+# --- Ripetibilità: cache delle risposte ---------------------------------------
+
+
+def test_stesso_prompt_stessa_risposta_senza_richiamare_il_modello(tmp_path: Path) -> None:
+    """È il rimedio vero alla varianza fra due esecuzioni.
+
+    Misurato sull'API DeepSeek: `temperature=0` e `seed` vengono accettati ma
+    non rendono deterministici i modelli di ragionamento (su tre chiamate
+    identiche la probabilità bull è uscita 0,70 / 0,15 / 0,55). Riusare la
+    risposta a parità di prompt lo garantisce invece per costruzione.
+    """
+    cache = DataCache(tmp_path / "llm")
+    provider = FakeProvider(api_key=SecretStr("k"), cache=cache)
+    messaggi = [Message(role="user", content="analizza SLS")]
+
+    prima = provider.complete("sys", messaggi)
+    seconda = provider.complete("sys", messaggi)
+
+    assert prima == seconda
+    assert provider.calls == 1, "la seconda risposta deve venire dalla cache"
+
+
+def test_un_prompt_diverso_non_riusa_la_risposta(tmp_path: Path) -> None:
+    """Il prompt contiene i dati raccolti: se cambiano, il report si rifà."""
+    cache = DataCache(tmp_path / "llm")
+    provider = FakeProvider(api_key=SecretStr("k"), cache=cache)
+
+    provider.complete("sys", [Message(role="user", content="prezzo 13.85")])
+    provider.complete("sys", [Message(role="user", content="prezzo 14.20")])
+
+    assert provider.calls == 2
+
+
+def test_la_chiave_distingue_modello_e_parametri(tmp_path: Path) -> None:
+    """Due modelli diversi non devono condividere una risposta."""
+    cache = DataCache(tmp_path / "llm")
+    uno = FakeProvider(api_key=SecretStr("k"), model="a", cache=cache)
+    due = FakeProvider(api_key=SecretStr("k"), model="b", cache=cache)
+    messaggi = [Message(role="user", content="x")]
+
+    chiave_uno = uno._cache_key("sys", messaggi, 100, 0.0, {})
+    chiave_due = due._cache_key("sys", messaggi, 100, 0.0, {})
+    assert chiave_uno != chiave_due
+
+    # E nemmeno max_tokens o temperature diversi.
+    assert uno._cache_key("sys", messaggi, 100, 0.0, {}) != uno._cache_key(
+        "sys", messaggi, 200, 0.0, {}
+    )
+    assert uno._cache_key("sys", messaggi, 100, 0.0, {}) != uno._cache_key(
+        "sys", messaggi, 100, 0.7, {}
+    )
+
+
+def test_senza_cache_il_modello_viene_richiamato() -> None:
+    provider = FakeProvider(api_key=SecretStr("k"))
+    provider.complete("sys", [Message(role="user", content="x")])
+    provider.complete("sys", [Message(role="user", content="x")])
+    assert provider.calls == 2
+
+
+def test_un_errore_non_viene_messo_in_cache(tmp_path: Path) -> None:
+    """Un guasto transitorio non deve restare congelato per un giorno."""
+    cache = DataCache(tmp_path / "llm")
+    provider = FakeProvider(
+        errors=[LLMRateLimitError("429")], api_key=SecretStr("k"), cache=cache, max_retries=1
+    )
+    with pytest.raises(LLMRateLimitError):
+        provider.complete("sys", [Message(role="user", content="x")])
+
+    provider.errors = []
+    assert provider.complete("sys", [Message(role="user", content="x")]) is not None
+
+
+def test_ttl_non_positivo_disattiva_la_cache_delle_risposte(tmp_path: Path) -> None:
+    """È il modo documentato per forzare una risposta nuova (CACHE_TTL_LLM_SECONDS=0)."""
+    cache = DataCache(tmp_path / "llm")
+    provider = FakeProvider(api_key=SecretStr("k"), cache=cache, cache_ttl_seconds=0)
+
+    provider.complete("sys", [Message(role="user", content="x")])
+    provider.complete("sys", [Message(role="user", content="x")])
+
+    assert provider.calls == 2
