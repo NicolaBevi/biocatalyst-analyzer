@@ -11,12 +11,15 @@ import pytest
 import respx
 
 from biocatalyst.analysis.screening import (
+    RISK_APPETITE_LABELS,
+    RISK_APPETITES,
     attractiveness_score,
     imminence_score,
     meets_phase_requirement,
     months_to_catalyst,
     passes_price_and_size,
     phase_score,
+    risk_appetite_label,
     runway_coverage_score,
     size_score,
 )
@@ -592,3 +595,38 @@ def test_punteggio_zero_se_tutti_i_pesi_sono_nulli() -> None:
     )
 
     assert punteggio == 0.0
+
+
+# --- Nomi dei profili di rischio --------------------------------------------
+
+
+def test_i_profili_hanno_nomi_inglesi_stabili() -> None:
+    """Sono i valori accettati da `--risk`: cambiarli romperebbe i comandi salvati.
+
+    Prima erano in italiano e comparivano così anche nell'interfaccia inglese,
+    nel menù di screening.
+    """
+    assert set(RISK_APPETITES) == {"speculative", "balanced", "prudent"}
+
+
+@pytest.mark.parametrize(
+    ("name", "language", "atteso"),
+    [
+        ("speculative", "en", "speculative"),
+        ("speculative", "it", "speculativo"),
+        ("balanced", "it", "bilanciato"),
+        ("prudent", "it", "prudente"),
+    ],
+)
+def test_l_etichetta_del_profilo_segue_la_lingua(name: str, language: str, atteso: str) -> None:
+    assert risk_appetite_label(name, language) == atteso
+
+
+def test_un_profilo_sconosciuto_si_mostra_com_e() -> None:
+    """Meglio un nome grezzo che un errore in mezzo a uno screen già pagato."""
+    assert risk_appetite_label("inventato", "en") == "inventato"
+
+
+def test_ogni_profilo_ha_l_etichetta_in_entrambe_le_lingue() -> None:
+    for nome in RISK_APPETITES:
+        assert set(RISK_APPETITE_LABELS[nome]) == {"en", "it"}, nome

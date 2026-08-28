@@ -18,7 +18,7 @@ from rich.table import Table
 from biocatalyst import __version__
 from biocatalyst.agents import AgentError
 from biocatalyst.agents import analyze as run_analysis
-from biocatalyst.analysis.screening import RISK_APPETITES
+from biocatalyst.analysis.screening import RISK_APPETITES, risk_appetite_label
 from biocatalyst.config import LLMProviderName, Settings, get_settings
 from biocatalyst.data.base import DataProviderError
 from biocatalyst.data.factory import build_data_providers
@@ -66,7 +66,7 @@ def _settings_for(provider: str | None, language: str | None) -> Settings:
         except ValueError:
             validi = ", ".join(p.value for p in LLMProviderName)
             raise typer.BadParameter(
-                f"provider sconosciuto '{provider}'. Validi: {validi}"
+                f"unknown provider '{provider}'. Valid values: {validi}"
             ) from None
         updates.update(
             default_provider=scelto,
@@ -81,7 +81,7 @@ def _settings_for(provider: str | None, language: str | None) -> Settings:
 
     if language is not None:
         if language not in ("it", "en"):
-            raise typer.BadParameter("lingua non valida: usa 'it' oppure 'en'")
+            raise typer.BadParameter("invalid language: use 'it' or 'en'")
         updates["report_language"] = language
 
     return settings.model_copy(update=updates) if updates else settings
@@ -99,10 +99,10 @@ def _configura_log(settings: Settings, verbose: bool) -> None:
 def _parse_formats(value: str) -> tuple[str, ...]:
     formats = tuple(f".{f.strip().lstrip('.').lower()}" for f in value.split(",") if f.strip())
     if not formats:
-        raise typer.BadParameter("indica almeno un formato")
+        raise typer.BadParameter("specify at least one format")
     non_validi = [f for f in formats if f not in (".md", ".json", ".html", ".pdf")]
     if non_validi:
-        raise typer.BadParameter(f"formati non supportati: {', '.join(non_validi)}")
+        raise typer.BadParameter(f"unsupported formats: {', '.join(non_validi)}")
     return formats
 
 
@@ -243,7 +243,7 @@ def compare(
     prosegue con gli altri.
     """
     if len(tickers) < 2:
-        raise typer.BadParameter("servono almeno due ticker da confrontare")
+        raise typer.BadParameter("at least two tickers are needed to compare")
 
     settings = _settings_for(provider, language)
     _configura_log(settings, verbose)
@@ -318,12 +318,9 @@ def screen(
         str,
         typer.Option(
             "--risk",
-            help=(
-                "Profilo di rischio: speculativo (ignora la cassa nell'ordinamento), "
-                "bilanciato, prudente"
-            ),
+            help=("Risk profile: speculative (ignores cash in the ranking), balanced, prudent"),
         ),
-    ] = "bilanciato",
+    ] = "balanced",
     min_phase: Annotated[
         str, typer.Option("--min-phase", help="Minimum phase: PHASE1, PHASE2, PHASE3")
     ] = "PHASE2",
@@ -337,14 +334,14 @@ def screen(
         bool,
         typer.Option(
             "--include-pharma",
-            help="Aggiunge il SIC 2834: oltre 1.500 società, molto più lento",
+            help="Adds SIC 2834: over 1,500 companies, much slower",
         ),
     ] = False,
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="Save the result as JSON")
     ] = None,
     language: Annotated[
-        str | None, typer.Option("--language", "-l", help="Lingua delle motivazioni: it o en")
+        str | None, typer.Option("--language", "-l", help="Language of the rationales: it or en")
     ] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Detailed logs")] = False,
 ) -> None:
@@ -357,7 +354,7 @@ def screen(
     appetite = RISK_APPETITES.get(risk.lower())
     if appetite is None:
         raise typer.BadParameter(
-            f"profilo di rischio sconosciuto '{risk}'. Validi: {', '.join(RISK_APPETITES)}"
+            f"unknown risk profile '{risk}'. Valid values: {', '.join(RISK_APPETITES)}"
         )
     settings = _settings_for(None, language)
     _configura_log(settings, verbose)
@@ -375,7 +372,7 @@ def screen(
     console.print(
         f"\n[bold]Screening for opportunities[/bold] — price ≤ ${max_price:,.2f}, "
         f"market cap ≤ ${max_market_cap:,.0f}, catalysts within {catalyst_window} months, "
-        f"{appetite.name} profile"
+        f"{risk_appetite_label(appetite.name, settings.report_language)} profile"
     )
     with console.status("[dim]building the universe…[/dim]") as stato:
 

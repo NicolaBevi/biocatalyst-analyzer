@@ -321,7 +321,7 @@ def _screen_tab(language: str) -> None:
     risk = col4.selectbox(
         "Risk profile",
         options=list(RISK_APPETITES),
-        index=list(RISK_APPETITES).index("bilanciato"),
+        index=list(RISK_APPETITES).index("balanced"),
         help=(
             "Speculative ignores cash in the ranking: dilution reduces the upside but "
             "does not remove it, and discounted names are where asymmetric bets live. "

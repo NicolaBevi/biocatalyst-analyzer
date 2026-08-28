@@ -16,6 +16,7 @@ from biocatalyst.agents.base import (
     BaseAgent,
     append_missing,
 )
+from biocatalyst.agents.prompt_text import pt
 from biocatalyst.agents.prompts import MARKET_SYSTEM
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
@@ -89,14 +90,13 @@ class MarketNewsAgent(BaseAgent):
             f"(al {s.as_of})"
             for s in sentiment
         )
-        prompt = (
-            f"Società: {raw.company_name or raw.ticker} ({raw.ticker})\n\n"
-            f"Andamento del settore biotech:\n{sector_lines or '- dato non disponibile'}\n\n"
-            f"Notizie sul titolo degli ultimi {self.news_days} giorni:\n"
-            f"{headlines or '- nessuna notizia disponibile'}\n\n"
-            "Sintetizza il contesto di mercato. Nelle note macro considera il "
-            "clima per le small cap biotech (tassi di interesse, orientamento "
-            "FDA, attività di fusioni e acquisizioni nel settore)."
+        prompt = pt(
+            self.language,
+            "n.main",
+            company=f"{raw.company_name or raw.ticker} ({raw.ticker})",
+            sector=sector_lines or pt(self.language, "n.no_sector"),
+            days=self.news_days,
+            headlines=headlines or pt(self.language, "n.no_news"),
         )
 
         try:

@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from typing import Any, ClassVar
 
 from biocatalyst.agents.base import KEY_ANALYSIS, KEY_RAW_DATA, BaseAgent, append_missing
+from biocatalyst.agents.prompt_text import pt
 from biocatalyst.agents.prompts import ANALYST_SYSTEM
 from biocatalyst.analysis import catalysts_from_trials, compute_financial_metrics
 from biocatalyst.analysis.base_rates import base_rate_for
@@ -133,24 +134,20 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
         notes: list[str],
         storia: TrialScheduleHistory | None = None,
     ) -> TrialAndMarketAssessment | None:
-        prompt = (
-            f"Azienda: {raw.company_name or raw.ticker}\n\n"
-            "Studio di riferimento (quello col catalizzatore più vicino):\n"
-            f"- Identificativo: {trial.nct_id}\n"
-            f"- Titolo: {trial.brief_title}\n"
-            f"- Fase: {', '.join(trial.phase) or 'non specificata'}\n"
-            f"- Stato: {trial.overall_status}\n"
-            f"- Numerosità: {trial.enrollment_count or 'non disponibile'} "
-            f"({trial.enrollment_type or 'tipo non indicato'})\n"
-            f"- Endpoint primario: {trial.primary_outcome_measure or 'non disponibile'}\n"
-            f"- Completamento atteso: {trial.primary_completion_date or 'non disponibile'}\n"
-            f"- Patologia: {', '.join(trial.condition) or 'non specificata'}\n"
-            f"{_nota_ritardo(trial)}"
-            f"{_nota_storico(storia)}\n"
-            "Valuta criticamente lo studio e stima il mercato potenziale del farmaco.\n"
-            "Nel campo comparable_drug_name indica il NOME COMMERCIALE di un solo "
-            "farmaco già approvato e commercializzato negli Stati Uniti che serva da "
-            "riferimento di prezzo per questa indicazione."
+        prompt = pt(
+            self.language,
+            "a.main",
+            company=raw.company_name or raw.ticker,
+            nct=trial.nct_id,
+            title=trial.brief_title,
+            phase=", ".join(trial.phase) or pt(self.language, "unspecified"),
+            status=trial.overall_status,
+            enrollment=trial.enrollment_count or pt(self.language, "unavailable"),
+            enrollment_type=trial.enrollment_type or pt(self.language, "a.enrollment_type_na"),
+            endpoint=trial.primary_outcome_measure or pt(self.language, "unavailable"),
+            completion=trial.primary_completion_date or pt(self.language, "unavailable"),
+            condition=", ".join(trial.condition) or pt(self.language, "unspecified"),
+            notes=_nota_ritardo(trial, self.language) + _nota_storico(storia, self.language),
         )
         try:
             return complete_structured(
@@ -195,26 +192,18 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
         return tam.model_copy(update={"verified_pricing": spesa})
 
 
-def _nota_ritardo(trial: ClinicalTrial) -> str:
+def _nota_ritardo(trial: ClinicalTrial, language: ReportLanguage) -> str:
     """Segnala all'analista che lo studio è in ritardo e cosa può significare."""
     giorni = overdue_days(trial)
     if giorni <= 0:
         return ""
-    testo = (
-        f"- ATTENZIONE: la data stimata di completamento è superata da {giorni} giorni "
-        f"e lo studio risulta ancora attivo: la lettura dei dati è attesa, non avvenuta.\n"
-    )
+    testo = pt(language, "a.overdue", days=giorni)
     if is_event_driven(trial):
-        testo += (
-            "- L'endpoint primario è a eventi: la durata dipende dal numero di eventi "
-            "verificatisi, non dal calendario. Valuta entrambe le letture possibili di un "
-            "ritardo (eventi più lenti del previsto, oppure difficoltà operative) senza "
-            "presentarne una come certa.\n"
-        )
+        testo += pt(language, "a.event_driven")
     return testo
 
 
-def _nota_storico(storia: TrialScheduleHistory | None) -> str:
+def _nota_storico(storia: TrialScheduleHistory | None, language: ReportLanguage) -> str:
     """Espone quante volte la data di lettura è già stata spostata.
 
     È la differenza fra un episodio e un andamento: un rinvio isolato è
@@ -225,23 +214,20 @@ def _nota_storico(storia: TrialScheduleHistory | None) -> str:
     if storia is None or not storia.changes:
         return ""
     righe = "; ".join(
-        f"il {c.revised_on} da {c.previous_date} a {c.new_date}" for c in storia.changes
+        pt(language, "w.history_move", date=c.revised_on, previous=c.previous_date, new=c.new_date)
+        for c in storia.changes
     )
     mesi = storia.total_slip_months
-    testo = (
-        f"- STORICO DELLE DATE (fonte: registro CT.gov, dato misurato): la data di "
-        f"completamento è stata modificata {len(storia.changes)} volte — {righe}."
-    )
+    slittamento = ""
     if mesi is not None and mesi > 0:
-        testo += (
-            f" Dalla prima data annunciata ({storia.first_declared_date}) a quella "
-            f"attuale ({storia.current_declared_date}) sono {mesi:.0f} mesi di slittamento."
+        slittamento = pt(
+            language,
+            "a.history_slip",
+            first=storia.first_declared_date,
+            current=storia.current_declared_date,
+            months=mesi,
         )
-    testo += (
-        " Tieni conto di questo andamento nel valutare il ritardo: un rinvio isolato "
-        "e una serie di rinvii ripetuti non hanno lo stesso significato.\n"
-    )
-    return testo
+    return pt(language, "a.history", n=len(storia.changes), moves=righe, slip=slittamento)
 
 
 def _lead_trial(raw: CompanyRawData, catalysts: Sequence[Catalyst]) -> ClinicalTrial | None:

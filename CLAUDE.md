@@ -71,6 +71,7 @@ src/biocatalyst/
 │   ├── claims.py         # cifre della prosa senza riscontro nei dati
 │   └── screening.py      # filtri e punteggio di attrattività
 ├── agents/         # i 4 agenti + pipeline — FATTO (Fase 5)
+│   ├── prompt_text.py # impalcatura bilingue dei prompt (EN/IT)
 │   ├── base.py     #   BaseAgent: run(context)->context, chiavi richieste
 │   ├── data_collector.py, analyst.py, market_news.py, report_writer.py
 │   └── pipeline.py #   analyze(ticker) con callback di avanzamento
@@ -169,6 +170,9 @@ src/biocatalyst/
 | **Le risposte dell'LLM vanno in cache: è così che un report diventa ripetibile** | L'utente ha segnalato che rigenerare lo stesso report dava numeri diversi. Verificato: due analisi di SLS a poche ore di distanza, stessi dati, expected value +19,1% e -27,8%. La chiave di cache è l'impronta del prompt intero, e il prompt contiene i dati raccolti: se i dati cambiano il report si rifà da solo, se non cambiano la risposta è la stessa. Non costa, anzi risparmia |
 | **`temperature=0` e `seed` NON bastano** (misurato, non ipotizzato) | Sembrava la soluzione ovvia. L'API DeepSeek accetta entrambi i parametri, ma sui modelli di ragionamento non li onora: su tre chiamate identiche a `deepseek-v4-flash` con `temperature=0, seed=7` la probabilità bull è uscita 0,70 / 0,15 / 0,55 — dispersione pari a quella del default. La conduttura è comunque implementata (`supports_seed`, `LLM_TEMPERATURE`) perché è corretta e altri provider la onorano, ma il rimedio vero è la cache |
 | **`generated_at` riporta l'età reale del dato, non l'ora di esecuzione** | Il file dichiarava da sempre `datetime.now()`, quindi un report costruito su filing di ieri si presentava come appena raccolto. Con la cache delle risposte il caso è diventato la norma, non l'eccezione. `DataCache` ora ricorda quando è stato scritto il più vecchio dei dati serviti (ricavato da `expire_time - ttl`, senza cambiare il formato già in cache) e il collector usa quello |
+| **I prompt sono nella lingua del report, non sempre in italiano** | Segnalato dall'utente: il PDF di SLS usciva metà in inglese e metà in italiano. Causa: il system prompt diceva "write in English" ma **l'intero messaggio utente era in italiano** (intestazioni, etichette dei dati, istruzioni finali), e il modello seguiva a volte la lingua del messaggio invece di quella dell'istruzione. Con la cache delle risposte la scelta sbagliata restava poi congelata. Ora `agents/prompt_text.py` contiene l'impalcatura nelle due lingue, con gli stessi test di parità già usati per `i18n.py`, più un test che cerca parole dell'altra lingua dentro ogni voce |
+| **La lingua è chiesta anche nel messaggio utente, non solo nel system prompt** | Cintura e bretelle: ogni prompt principale finisce con "Scrivi ogni sezione in italiano" / "Write every section in English". Il system prompt da solo non era bastato |
+| **I profili di rischio hanno nomi interni inglesi** (`speculative`/`balanced`/`prudent`) | Comparivano in italiano nel menù di screening anche a interfaccia inglese. Il nome interno è ora inglese e stabile — è il valore accettato da `--risk` — mentre `risk_appetite_label()` fornisce l'etichetta tradotta dove serve |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive

@@ -613,12 +613,16 @@ def test_il_writer_riceve_l_intera_pipeline_non_solo_l_asset_scelto() -> None:
             ),
         ]
     )
-    prompt = _build_prompt(raw, _analysis_bundle(), None, 0.403)
+    prompt = _build_prompt(raw, _analysis_bundle(), None, 0.403, "it")
 
     assert "PIPELINE CLINICA REGISTRATA" in prompt
     assert "NCT_UNO" in prompt
     assert "NCT_DUE" in prompt
     assert "cita TUTTI gli asset" in prompt
+
+    inglese = _build_prompt(raw, _analysis_bundle(), None, 0.403, "en")
+    assert "REGISTERED CLINICAL PIPELINE" in inglese
+    assert "cite EVERY relevant asset" in inglese
 
 
 def test_il_prompt_segnala_ritardo_ed_endpoint_a_eventi() -> None:
@@ -640,11 +644,16 @@ def test_il_prompt_segnala_ritardo_ed_endpoint_a_eventi() -> None:
     bundle = _analysis_bundle()
     bundle.catalysts = catalysts_from_trials([trial], today=date(2026, 8, 26))
 
-    prompt = _build_prompt(raw, bundle, None, 0.403)
+    prompt = _build_prompt(raw, bundle, None, 0.403, "it")
 
     assert "[IN RITARDO]" in prompt
     assert "[ENDPOINT A EVENTI]" in prompt
     assert "due letture possibili" in prompt
+
+    inglese = _build_prompt(raw, bundle, None, 0.403, "en")
+    assert "[OVERDUE]" in inglese
+    assert "[EVENT-DRIVEN ENDPOINT]" in inglese
+    assert "both possible readings" in inglese
 
 
 def test_il_prompt_del_writer_riceve_lo_storico_dei_rinvii() -> None:
@@ -674,12 +683,17 @@ def test_il_prompt_del_writer_riceve_lo_storico_dei_rinvii() -> None:
             ),
         ],
     )
-    prompt = _build_prompt(_raw_data(), bundle, None, 0.403)
+    prompt = _build_prompt(_raw_data(), bundle, None, 0.403, "it")
 
     assert "STORICO DELLE DATE" in prompt
     assert "modificata 2 volte" in prompt
     assert "48 mesi" in prompt
     assert "dato misurato" in prompt
+
+    inglese = _build_prompt(_raw_data(), bundle, None, 0.403, "en")
+    assert "DECLARED-DATE HISTORY" in inglese
+    assert "revised 2 times" in inglese
+    assert "48 months" in inglese
 
 
 def test_il_writer_riceve_il_prezzo_verificato_non_solo_la_stima() -> None:
@@ -706,12 +720,17 @@ def test_il_writer_riceve_il_prezzo_verificato_non_solo_la_stima() -> None:
         ),
         methodology_notes="stima",
     )
-    prompt = _build_prompt(_raw_data(), bundle, None, 0.403)
+    prompt = _build_prompt(_raw_data(), bundle, None, 0.403, "it")
 
     assert "PREZZO VERIFICATO" in prompt
     assert "129,238" in prompt
     assert "prevale sulla stima" in prompt
     assert "1,842 beneficiari" in prompt
+
+    inglese = _build_prompt(_raw_data(), bundle, None, 0.403, "en")
+    assert "VERIFIED PRICING" in inglese
+    assert "takes precedence" in inglese
+    assert "1,842 Medicare beneficiaries" in inglese
 
 
 def test_lo_schema_dell_analista_non_espone_il_prezzo_verificato() -> None:
@@ -767,13 +786,18 @@ def test_il_prompt_del_writer_riceve_il_tasso_storico() -> None:
 
     bundle = _analysis_bundle()
     bundle.base_rate = base_rate_for(["PHASE3"], ["Acute Myeloid Leukemia"])
-    prompt = _build_prompt(_raw_data(), bundle, None, 0.403)
+    prompt = _build_prompt(_raw_data(), bundle, None, 0.403, "it")
 
     assert "TASSO STORICO DI SUCCESSO" in prompt
     assert "58%" in prompt
     assert "BIO" in prompt
     # Ancoraggio, non vincolo: uno studio può meritare più o meno della media.
     assert "Non è un vincolo" in prompt
+
+    inglese = _build_prompt(_raw_data(), bundle, None, 0.403, "en")
+    assert "HISTORICAL SUCCESS RATE" in inglese
+    assert "58%" in inglese
+    assert "not a constraint" in inglese
 
 
 def test_l_analista_calcola_il_tasso_dallo_studio_di_riferimento() -> None:

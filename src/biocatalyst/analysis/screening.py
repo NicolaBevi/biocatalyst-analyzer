@@ -55,18 +55,34 @@ class RiskAppetite:
 #: diluire, perché la diluizione riduce l'upside ma non lo azzera. Il rischio
 #: resta segnalato su ogni candidata.
 SPECULATIVE = RiskAppetite(
-    "speculativo", imminence=0.45, runway_coverage=0.0, size=0.40, phase=0.15
+    "speculative", imminence=0.45, runway_coverage=0.0, size=0.40, phase=0.15
 )
 
 #: Default: la cassa conta, ma non abbastanza da escludere una società
 #: piccola con un catalizzatore vicino.
-BALANCED = RiskAppetite("bilanciato", imminence=0.40, runway_coverage=0.15, size=0.30, phase=0.15)
+BALANCED = RiskAppetite("balanced", imminence=0.40, runway_coverage=0.15, size=0.30, phase=0.15)
 
 #: Privilegia chi ha liquidità sufficiente ad arrivare al catalizzatore
 #: senza raccogliere capitale.
-PRUDENT = RiskAppetite("prudente", imminence=0.30, runway_coverage=0.40, size=0.20, phase=0.10)
+PRUDENT = RiskAppetite("prudent", imminence=0.30, runway_coverage=0.40, size=0.20, phase=0.10)
 
 RISK_APPETITES: dict[str, RiskAppetite] = {a.name: a for a in (SPECULATIVE, BALANCED, PRUDENT)}
+
+#: Nomi mostrati all'utente. Il nome interno resta inglese e stabile — è il
+#: valore accettato da `--risk` e la chiave del dizionario — mentre l'etichetta
+#: segue la lingua scelta: prima i tre profili comparivano in italiano anche
+#: nell'interfaccia inglese.
+RISK_APPETITE_LABELS: dict[str, dict[str, str]] = {
+    "speculative": {"en": "speculative", "it": "speculativo"},
+    "balanced": {"en": "balanced", "it": "bilanciato"},
+    "prudent": {"en": "prudent", "it": "prudente"},
+}
+
+
+def risk_appetite_label(name: str, language: str = "en") -> str:
+    """Nome del profilo di rischio nella lingua richiesta."""
+    return RISK_APPETITE_LABELS.get(name, {}).get(language, name)
+
 
 #: Un margine di cassa pari o superiore al doppio del tempo che manca al
 #: catalizzatore è considerato pieno: oltre non aggiunge sicurezza utile.

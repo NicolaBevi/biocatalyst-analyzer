@@ -120,12 +120,12 @@ def test_parse_formats(valore: str, atteso: tuple[str, ...]) -> None:
 
 
 def test_parse_formats_rifiuta_estensioni_ignote() -> None:
-    with pytest.raises(Exception, match="non supportati"):
+    with pytest.raises(Exception, match="unsupported formats"):
         _parse_formats("docx")
 
 
 def test_parse_formats_rifiuta_stringa_vuota() -> None:
-    with pytest.raises(Exception, match="almeno un formato"):
+    with pytest.raises(Exception, match="at least one format"):
         _parse_formats("")
 
 
@@ -146,7 +146,7 @@ def test_formato_non_valido_fallisce_prima_di_analizzare(monkeypatch: pytest.Mon
 def test_provider_sconosciuto_viene_rifiutato() -> None:
     result = runner.invoke(app, ["analyze", "ENSC", "--provider", "inesistente"])
     assert result.exit_code != 0
-    assert "provider sconosciuto" in result.output
+    assert "unknown provider" in result.output
 
 
 def test_lingua_non_valida_viene_rifiutata() -> None:
@@ -262,7 +262,7 @@ def test_analyze_chiude_sempre_i_provider(monkeypatch: pytest.MonkeyPatch) -> No
 def test_compare_richiede_almeno_due_ticker() -> None:
     result = runner.invoke(app, ["compare", "ENSC"])
     assert result.exit_code != 0
-    assert "almeno due" in result.output
+    assert "at least two tickers" in result.output
 
 
 def test_compare_ordina_per_rendimento_atteso(monkeypatch: pytest.MonkeyPatch) -> None:
