@@ -33,13 +33,16 @@ from biocatalyst.llm.structured import (
     complete_structured,
     extract_json,
 )
-from biocatalyst.models.analysis import AnalysisBundle, FinancialMetrics
+from biocatalyst.models.analysis import AnalysisBundle, FinancialMetrics, TAMEstimate
 from biocatalyst.models.raw_data import (
     ClinicalTrial,
     CompanyRawData,
+    DrugSpending,
     MarketData,
     QuarterlyFinancials,
+    ScheduleRevision,
     SECFilingSignals,
+    TrialScheduleHistory,
 )
 
 # --- Doppi di test ------------------------------------------------------------
@@ -642,3 +645,154 @@ def test_il_prompt_segnala_ritardo_ed_endpoint_a_eventi() -> None:
     assert "[IN RITARDO]" in prompt
     assert "[ENDPOINT A EVENTI]" in prompt
     assert "due letture possibili" in prompt
+
+
+def test_il_prompt_del_writer_riceve_lo_storico_dei_rinvii() -> None:
+    """Distinguere un rinvio isolato da una serie richiede lo storico.
+
+    Senza questi dati il modello vede "in ritardo di 268 giorni" e non ha modo
+    di sapere se è la prima volta o la quarta.
+    """
+    from biocatalyst.agents.report_writer import _build_prompt
+
+    bundle = _analysis_bundle()
+    bundle.schedule_history = TrialScheduleHistory(
+        nct_id="NCT04229979",
+        revisions_total=10,
+        first_declared_date=date(2021, 12, 1),
+        current_declared_date=date(2025, 12, 1),
+        changes=[
+            ScheduleRevision(
+                revised_on=date(2023, 1, 27),
+                previous_date=date(2021, 12, 1),
+                new_date=date(2024, 12, 1),
+            ),
+            ScheduleRevision(
+                revised_on=date(2025, 9, 26),
+                previous_date=date(2024, 12, 1),
+                new_date=date(2025, 12, 1),
+            ),
+        ],
+    )
+    prompt = _build_prompt(_raw_data(), bundle, None, 0.403)
+
+    assert "STORICO DELLE DATE" in prompt
+    assert "modificata 2 volte" in prompt
+    assert "48 mesi" in prompt
+    assert "dato misurato" in prompt
+
+
+def test_il_writer_riceve_il_prezzo_verificato_non_solo_la_stima() -> None:
+    """Il prezzo CMS arriva dopo la risposta dell'analista.
+
+    Senza passarlo al writer, il testo del report ripeterebbe la stima del
+    modello mentre la tabella accanto mostra la cifra misurata: due numeri
+    diversi per la stessa cosa nella stessa pagina.
+    """
+    from biocatalyst.agents.report_writer import _build_prompt
+
+    bundle = _analysis_bundle()
+    bundle.tam = TAMEstimate(
+        indication="AML",
+        prevalence_estimate="circa 20.000 pazienti",
+        pricing_comparable="Onureg, $240.000-300.000 di listino",
+        comparable_drug_name="Onureg",
+        verified_pricing=DrugSpending(
+            brand_name="Onureg",
+            year=2024,
+            avg_spend_per_beneficiary_usd=129_238.0,
+            beneficiaries=1_842,
+            medicare_part="D",
+        ),
+        methodology_notes="stima",
+    )
+    prompt = _build_prompt(_raw_data(), bundle, None, 0.403)
+
+    assert "PREZZO VERIFICATO" in prompt
+    assert "129,238" in prompt
+    assert "prevale sulla stima" in prompt
+    assert "1,842 beneficiari" in prompt
+
+
+def test_lo_schema_dell_analista_non_espone_il_prezzo_verificato() -> None:
+    """Garanzia strutturale, non un'istruzione nel prompt.
+
+    Finché `verified_pricing` era nello schema, il modello lo vedeva vuoto e
+    scriveva "the verified Medicare spending field is left null" in un report
+    che due righe sotto lo mostrava compilato. Toglierlo dallo schema rende la
+    contraddizione impossibile.
+    """
+    from biocatalyst.models.analysis import TAMDraft, TrialAndMarketAssessment
+
+    campi_modello = set(TrialAndMarketAssessment.model_fields["tam"].annotation.model_fields)  # type: ignore[union-attr]
+    assert "verified_pricing" not in campi_modello
+    assert "comparable_drug_name" in campi_modello, "il comparatore lo sceglie il modello"
+
+    # E il prompt realmente inviato non deve nemmeno nominarlo: finché lo
+    # faceva, il modello rispondeva spiegando perché il campo era vuoto.
+    provider = ScriptedProvider([_ANALISI_JSON])
+    ClinicalFinancialAnalystAgent(provider).run(
+        {
+            KEY_RAW_DATA: _raw_data(
+                clinical_trials=[
+                    ClinicalTrial(
+                        nct_id="NCT_X",
+                        brief_title="Studio",
+                        phase=["PHASE2"],
+                        overall_status="RECRUITING",
+                        primary_completion_date=date(2027, 1, 1),
+                        primary_completion_date_type="ESTIMATED",
+                    )
+                ]
+            )
+        }
+    )
+    inviato = provider.calls[0]["messages"][0].content
+    assert "verified_pricing" not in inviato
+    assert "comparable_drug_name" in inviato
+
+    # Il tipo del report resta completo.
+    assert "verified_pricing" in set(TAMEstimate.model_fields)
+    assert set(TAMDraft.model_fields).issubset(set(TAMEstimate.model_fields))
+
+
+def test_il_prompt_del_writer_riceve_il_tasso_storico() -> None:
+    """Le probabilità degli scenari sono il numero meno fondato del report.
+
+    Senza un termine di paragone il modello le sceglie e basta, e il sistema ci
+    calcola sopra l'expected value al centesimo.
+    """
+    from biocatalyst.agents.report_writer import _build_prompt
+    from biocatalyst.analysis.base_rates import base_rate_for
+
+    bundle = _analysis_bundle()
+    bundle.base_rate = base_rate_for(["PHASE3"], ["Acute Myeloid Leukemia"])
+    prompt = _build_prompt(_raw_data(), bundle, None, 0.403)
+
+    assert "TASSO STORICO DI SUCCESSO" in prompt
+    assert "58%" in prompt
+    assert "BIO" in prompt
+    # Ancoraggio, non vincolo: uno studio può meritare più o meno della media.
+    assert "Non è un vincolo" in prompt
+
+
+def test_l_analista_calcola_il_tasso_dallo_studio_di_riferimento() -> None:
+    agente = ClinicalFinancialAnalystAgent(ScriptedProvider([_ANALISI_JSON]))
+    raw = _raw_data(
+        clinical_trials=[
+            ClinicalTrial(
+                nct_id="NCT_AML",
+                brief_title="GPS in AML",
+                phase=["PHASE3"],
+                overall_status="ACTIVE_NOT_RECRUITING",
+                primary_completion_date=date(2025, 12, 1),
+                primary_completion_date_type="ESTIMATED",
+                condition=["Acute Myeloid Leukemia"],
+            )
+        ]
+    )
+    bundle = agente.run({KEY_RAW_DATA: raw})[KEY_ANALYSIS]
+
+    assert bundle.base_rate is not None
+    assert bundle.base_rate.area == "hematology"
+    assert bundle.base_rate.transition_pct == pytest.approx(57.8)

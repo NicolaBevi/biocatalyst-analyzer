@@ -13,7 +13,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from biocatalyst.models.raw_data import DrugSpending, SectorSentiment
+from biocatalyst.models.raw_data import DrugSpending, SectorSentiment, TrialScheduleHistory
 
 
 class FinancialMetrics(BaseModel):
@@ -79,7 +79,43 @@ class ClinicalAssessment(BaseModel):
     historical_precedent_comparison: str
 
 
-class TAMEstimate(BaseModel):
+class PhaseBaseRate(BaseModel):
+    """Tasso storico di successo per una fase clinica.
+
+    `transition_pct` è la probabilità di **superare la fase in corso**: è la
+    domanda che ci si pone davanti a una lettura attesa. `approval_pct` è
+    quella di arrivare fino all'approvazione partendo da lì, molto più bassa
+    perché mette in fila tutte le fasi rimanenti.
+
+    A differenza di ogni altro numero del report questi non vengono da un'API
+    interrogabile: sono valori di letteratura, e il campo `source` viaggia con
+    loro perché il lettore possa risalire alla pubblicazione.
+    """
+
+    phase: str
+    area: str
+    transition_pct: float = Field(ge=0, le=100)
+    approval_pct: float | None = Field(default=None, ge=0, le=100)
+    source: str
+    data_through_year: int
+
+    @property
+    def label(self) -> str:
+        return f"{self.phase.replace('PHASE', 'Phase ')} — {self.area}"
+
+
+class TAMDraft(BaseModel):
+    """La parte del TAM che compila il modello.
+
+    Volutamente **priva di `verified_pricing`**: quel campo lo riempie il
+    sistema dopo la risposta, coi dati di spesa CMS. Finché era nello schema il
+    modello lo vedeva vuoto e si sentiva in dovere di spiegarlo, scrivendo
+    "the verified Medicare spending field is left null" in un report che due
+    righe più sotto lo mostrava compilato. Un'istruzione nel prompt non era
+    bastata a fermarlo; toglierlo dallo schema rende la contraddizione
+    impossibile, come già fatto con l'aritmetica in `ReportDraft`.
+    """
+
     indication: str
     prevalence_estimate: str
     pricing_comparable: str
@@ -87,13 +123,19 @@ class TAMEstimate(BaseModel):
     #: cercarne il prezzo reale nei dati di spesa Medicare: il modello sceglie
     #: il comparatore (giudizio di dominio), il sistema ne verifica il prezzo.
     comparable_drug_name: str | None = None
-    #: Spesa Medicare effettiva per quel farmaco, se reperita. None significa
-    #: "non verificabile", e va dichiarato invece di far passare per dato la
-    #: cifra del modello.
-    verified_pricing: DrugSpending | None = None
     tam_low_usd: float | None = Field(default=None, ge=0)
     tam_high_usd: float | None = Field(default=None, ge=0)
     methodology_notes: str
+
+
+class TAMEstimate(TAMDraft):
+    """Il TAM come finisce nel report: la bozza del modello più la verifica.
+
+    `verified_pricing` a None significa "non verificabile" e va dichiarato,
+    invece di far passare per dato la cifra del modello.
+    """
+
+    verified_pricing: DrugSpending | None = None
 
 
 class TrialAndMarketAssessment(BaseModel):
@@ -105,7 +147,7 @@ class TrialAndMarketAssessment(BaseModel):
     """
 
     clinical: ClinicalAssessment
-    tam: TAMEstimate
+    tam: TAMDraft
 
 
 class AnalysisBundle(BaseModel):
@@ -120,6 +162,12 @@ class AnalysisBundle(BaseModel):
     catalysts: list[Catalyst] = Field(default_factory=list)
     clinical_assessment: ClinicalAssessment | None = None
     tam: TAMEstimate | None = None
+    #: Storico delle date dichiarate per lo studio di riferimento: dice se un
+    #: ritardo è un episodio o un andamento. None se non ricostruibile.
+    schedule_history: TrialScheduleHistory | None = None
+    #: Tasso storico di successo della fase dello studio di riferimento: il
+    #: termine di paragone contro cui leggere le probabilità del modello.
+    base_rate: PhaseBaseRate | None = None
     notes: list[str] = Field(default_factory=list)
 
 

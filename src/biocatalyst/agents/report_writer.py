@@ -33,6 +33,7 @@ from biocatalyst.analysis import (
     build_scenario_analysis,
     collect_data_warnings,
 )
+from biocatalyst.analysis.claims import collect_known_values, unverified_figures
 from biocatalyst.data.base import collect_safely
 from biocatalyst.data.factory import DataProviders
 from biocatalyst.i18n import t
@@ -179,6 +180,8 @@ class ReportWriterAgent(BaseAgent):
             financial_metrics=analysis.metrics,
             market_snapshot=raw.market_data,
             catalysts=analysis.catalysts,
+            schedule_history=analysis.schedule_history,
+            base_rate=analysis.base_rate,
             scenarios=scenarios,
             expected_value=expected_value,
             acquisition=AcquisitionAssessment(
@@ -193,9 +196,29 @@ class ReportWriterAgent(BaseAgent):
                 warnings=warnings,
             ),
         )
+        report.source_quality.unverified_figures = _unverified(report, raw, analysis)
 
         context[KEY_REPORT] = report
         return context
+
+
+def _unverified(report: Report, raw: CompanyRawData, analysis: AnalysisBundle) -> list[str]:
+    """Cifre della prosa che non hanno riscontro in nessun dato raccolto.
+
+    Il confronto avviene contro tutto ciò che il sistema ha misurato o
+    calcolato, dati grezzi compresi: la numerosità di uno studio sta lì e non
+    nel report, e senza guardarci risulterebbe "non verificata" pur essendo
+    nostra.
+    """
+    noti = collect_known_values(report, raw, analysis)
+    testo = "\n".join(
+        (
+            report.sections.pipeline_and_clinical_results,
+            report.sections.catalyst_analysis,
+            report.sections.operational_strategy,
+        )
+    )
+    return [f"{f.text} — {f.context}" for f in unverified_figures(testo, noti)]
 
 
 def _riga_pipeline(trial: ClinicalTrial) -> str:
@@ -264,6 +287,49 @@ def _build_prompt(
         for c in analysis.catalysts[:8]
     )
 
+    riferimento = ""
+    br = analysis.base_rate
+    if br is not None:
+        riferimento = (
+            f"\nTASSO STORICO DI SUCCESSO (riferimento di letteratura, non una previsione "
+            f"su questa società)\n"
+            f"{br.label}: storicamente il {br.transition_pct:.0f}% degli studi a questo "
+            f"stadio supera la fase."
+        )
+        if br.approval_pct is not None:
+            riferimento += (
+                f" La probabilità di arrivare all'approvazione partendo da qui è del "
+                f"{br.approval_pct:.0f}%."
+            )
+        riferimento += (
+            f" Fonte: {br.source}, dati fino al {br.data_through_year}.\n"
+            "Usalo come ancoraggio per la probabilità dello scenario rialzista: se la tua "
+            "stima se ne discosta molto, la motivazione deve stare nelle condizioni dello "
+            "scenario. Non è un vincolo — questo studio può meritare più o meno della "
+            "media — ma uno scostamento grande senza motivo è un errore.\n"
+        )
+
+    storico = ""
+    h = analysis.schedule_history
+    if h is not None and h.changes:
+        mosse = "; ".join(
+            f"il {c.revised_on} da {c.previous_date} a {c.new_date}" for c in h.changes
+        )
+        mesi = h.total_slip_months
+        storico = (
+            f"\nSTORICO DELLE DATE DELLO STUDIO DI RIFERIMENTO ({h.nct_id}) — dato misurato "
+            f"sul registro CT.gov, non stimato\n"
+            f"La data di completamento è stata modificata {len(h.changes)} volte: {mosse}."
+        )
+        if mesi is not None and mesi > 0:
+            storico += f" Slittamento complessivo dalla prima data annunciata: {mesi:.0f} mesi.\n"
+        else:
+            storico += "\n"
+        storico += (
+            "Cita questo andamento quando parli del ritardo: distingue un rinvio isolato "
+            "da una tendenza, e il lettore deve poterla vedere.\n"
+        )
+
     # Tutta la pipeline registrata, non solo gli studi con un catalizzatore
     # atteso: la panoramica deve elencare ogni asset, altrimenti il report
     # sembra riguardare una società con un solo farmaco.
@@ -296,10 +362,34 @@ def _build_prompt(
         tam_text = (
             f"\nMERCATO POTENZIALE\n"
             f"Indicazione: {analysis.tam.indication}\n"
-            f"Prevalenza: {analysis.tam.prevalence_estimate}\n"
-            f"Prezzo comparabile: {analysis.tam.pricing_comparable}\n"
+            f"Prevalenza (stimata dall'analista): {analysis.tam.prevalence_estimate}\n"
+            f"Prezzo comparabile (stimato dall'analista): {analysis.tam.pricing_comparable}\n"
             f"Note metodologiche: {analysis.tam.methodology_notes}\n"
         )
+        # Il prezzo verificato arriva dai dati CMS *dopo* la risposta
+        # dell'analista: senza passarlo qui, il testo del report ripeterebbe la
+        # cifra stimata mentre la tabella accanto mostra quella misurata.
+        vp = analysis.tam.verified_pricing
+        if vp is not None:
+            tam_text += (
+                f"PREZZO VERIFICATO (dato misurato, fonte CMS — prevale sulla stima "
+                f"qui sopra): {vp.brand_name}, "
+                f"${vp.avg_spend_per_beneficiary_usd:,.0f} di spesa media annua per "
+                f"beneficiario Medicare (Part {vp.medicare_part}, {vp.year}).\n"
+            )
+            if vp.beneficiaries is not None:
+                tam_text += (
+                    f"POPOLAZIONE TRATTATA (dato misurato): {vp.beneficiaries:,} beneficiari "
+                    f"Medicare in terapia con {vp.brand_name} nel {vp.year}. È un limite "
+                    f"inferiore alla popolazione totale, non la prevalenza della malattia: "
+                    f"se la stima di prevalenza qui sopra è di ordini di grandezza diversa, "
+                    f"segnalalo.\n"
+                )
+            tam_text += (
+                "Quando citi un prezzo di riferimento usa la cifra verificata e dì che "
+                "viene da CMS. Se la stima dell'analista se ne discosta molto, spiega la "
+                "differenza (listino contro spesa netta) invece di ignorarla.\n"
+            )
 
     market_text = ""
     if market_context is not None:
@@ -349,7 +439,7 @@ PIPELINE CLINICA REGISTRATA (tutti gli studi noti)
 
 CATALIZZATORI ATTESI (studi da cui si aspetta ancora una lettura)
 {catalysts or "- nessun catalizzatore futuro identificato dai trial registrati"}
-{clinical}{tam_text}{market_text}
+{riferimento}{storico}{clinical}{tam_text}{market_text}
 DATI NON REPERITI
 {chr(10).join(f"- {d}" for d in raw.missing_data) or "- nessuno"}
 

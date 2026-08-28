@@ -77,11 +77,18 @@ TEMPLATE = """
       {{ lb('per_beneficiary') }}
       (Medicare Part {{ r.tam.verified_pricing.medicare_part }},
       {{ r.tam.verified_pricing.year }}, CMS)</li>
+  {% if r.tam.verified_pricing.beneficiaries %}
+  <li><strong>{{ lb('treated_population') }}</strong>:
+      {{ "{:,}".format(r.tam.verified_pricing.beneficiaries) }}
+      {{ lb('beneficiaries_unit') }} ({{ r.tam.verified_pricing.year }})</li>
+  {% endif %}
   {% endif %}
 </ul>
 <p>{{ r.tam.methodology_notes }}</p>
 <div class="nota">{{ ex('tam') }}</div>
-{% if r.tam.verified_pricing %}<div class="nota">{{ ex('verified_pricing') }}</div>{% endif %}
+{% if r.tam.verified_pricing %}<div class="nota">{{ ex('verified_pricing') }}</div>
+{% if r.tam.verified_pricing.beneficiaries %}
+<div class="nota">{{ ex('treated_population') }}</div>{% endif %}{% endif %}
 {% endif %}
 
 <h2>{{ lb('sec_catalyst') }}</h2>
@@ -101,6 +108,29 @@ TEMPLATE = """
 <div class="nota">{{ ex('catalysts') }}</div>
 {% endif %}
 
+{% if r.schedule_history and r.schedule_history.changes %}
+<h3>{{ lb('schedule_history') }}</h3>
+<p><small>{{ r.schedule_history.nct_id }}</small></p>
+<table>
+  <tr><td>{{ lb('first_declared') }}</td><td>{{ r.schedule_history.first_declared_date }}</td></tr>
+  <tr><td>{{ lb('current_declared') }}</td>
+      <td>{{ r.schedule_history.current_declared_date }}</td></tr>
+  <tr><td>{{ lb('times_postponed') }}</td>
+      <td><strong>{{ r.schedule_history.times_postponed }}</strong></td></tr>
+  {% if r.schedule_history.total_slip_months is not none %}
+  <tr><td>{{ lb('total_slip') }}</td>
+      <td><strong>{{ "%.0f"|format(r.schedule_history.total_slip_months) }}
+      {{ lb('months') }}</strong></td></tr>
+  {% endif %}
+</table>
+<ul>
+{% for rev in r.schedule_history.changes %}
+  <li>{{ rev.revised_on }}: {{ rev.previous_date }} &rarr; {{ rev.new_date }}</li>
+{% endfor %}
+</ul>
+<div class="nota">{{ ex('schedule_history') }}</div>
+{% endif %}
+
 <h2>{{ lb('sec_scenarios') }}</h2>
 {% for nome, s in scenari %}
 <div class="scenario">
@@ -110,6 +140,22 @@ TEMPLATE = """
 </div>
 {% endfor %}
 <div class="nota">{{ ex('scenarios') }}</div>
+
+{% if r.base_rate %}
+<h3>{{ lb('base_rate') }}</h3>
+<p><small>{{ r.base_rate.label }}</small></p>
+<table>
+  <tr><td>{{ lb('base_rate_transition') }}</td>
+      <td><strong>{{ "%.0f"|format(r.base_rate.transition_pct) }}%</strong></td></tr>
+  {% if r.base_rate.approval_pct is not none %}
+  <tr><td>{{ lb('base_rate_approval') }}</td>
+      <td>{{ "%.0f"|format(r.base_rate.approval_pct) }}%</td></tr>
+  {% endif %}
+  <tr><td>{{ lb('base_rate_source') }}</td>
+      <td>{{ r.base_rate.source }} ({{ r.base_rate.data_through_year }})</td></tr>
+</table>
+<div class="nota">{{ ex('base_rate') }}</div>
+{% endif %}
 
 <h2>{{ lb('sec_ev') }}</h2>
 <table>
@@ -155,6 +201,13 @@ TEMPLATE = """
 {% else %}<li>{{ lb('none') }}</li>{% endfor %}
 </ul>
 <div class="nota">{{ ex('short_interest') }}</div>
+
+<p><strong>{{ lb('unverified_figures') }}</strong></p>
+<ul>
+{% for f in r.source_quality.unverified_figures %}<li>{{ f }}</li>
+{% else %}<li>{{ lb('none') }}</li>{% endfor %}
+</ul>
+<div class="nota">{{ ex('unverified_figures') }}</div>
 
 <div class="disclaimer"><strong>{{ lb('disclaimer_title') }}</strong> — {{ disclaimer }}</div>
 """

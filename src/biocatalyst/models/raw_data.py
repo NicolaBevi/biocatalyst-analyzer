@@ -85,6 +85,57 @@ class ClinicalTrial(BaseModel):
     lead_sponsor: str | None = None
 
 
+class ScheduleRevision(BaseModel):
+    """Una modifica della data di completamento primario dichiarata a CT.gov."""
+
+    revised_on: date
+    previous_date: date | None = None
+    new_date: date | None = None
+
+    @property
+    def is_postponement(self) -> bool:
+        if self.previous_date is None or self.new_date is None:
+            return False
+        return self.new_date > self.previous_date
+
+
+class TrialScheduleHistory(BaseModel):
+    """Storico delle date di completamento dichiarate per uno studio.
+
+    Sapere che uno studio è "in ritardo di 268 giorni" non dice se è la prima
+    volta o la quarta: sono due storie diverse. Uno slittamento isolato è
+    rumore, tre rinvii in cinque anni sono un andamento. CT.gov conserva ogni
+    revisione del record, quindi la differenza è **misurabile** invece che
+    lasciata all'interpretazione del modello.
+
+    Verificato su REGAL (NCT04229979): la data è passata da 2021-12 a 2025-12
+    in tre rinvii, quattro anni complessivi.
+    """
+
+    nct_id: str
+    #: Versioni totali del record, comprese quelle che non toccano le date.
+    revisions_total: int = Field(ge=0)
+    first_declared_date: date | None = None
+    current_declared_date: date | None = None
+    changes: list[ScheduleRevision] = Field(default_factory=list)
+
+    @property
+    def times_postponed(self) -> int:
+        return sum(1 for c in self.changes if c.is_postponement)
+
+    @property
+    def total_slip_days(self) -> int | None:
+        """Scarto fra la prima data annunciata e quella attuale."""
+        if self.first_declared_date is None or self.current_declared_date is None:
+            return None
+        return (self.current_declared_date - self.first_declared_date).days
+
+    @property
+    def total_slip_months(self) -> float | None:
+        giorni = self.total_slip_days
+        return None if giorni is None else giorni / 30.44
+
+
 class FDAApproval(BaseModel):
     """Da openFDA /drug/drugsfda.json. Non copre le orphan drug designation
     (vedi CLAUDE.md — omesse dall'MVP, nessuna API le espone)."""

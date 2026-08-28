@@ -950,3 +950,92 @@ def test_riga_senza_spesa_utilizzabile_viene_scartata() -> None:
     respx.get(PART_B_URL).mock(return_value=httpx.Response(200, json=[]))
 
     assert DrugPricingProvider(max_retries=1).get_spending("X") is None
+
+
+# --- Storico delle date di uno studio (CT.gov, endpoint interno) -------------
+
+_HISTORY_INDEX = {
+    "changes": [
+        {"version": 0, "date": "2020-01-12", "moduleLabels": []},
+        {"version": 1, "date": "2021-06-01", "moduleLabels": ["Contacts/Locations"]},
+        {"version": 2, "date": "2023-01-27", "moduleLabels": ["Study Status"]},
+        {"version": 3, "date": "2025-09-26", "moduleLabels": ["Study Status", "Eligibility"]},
+    ]
+}
+
+
+def _versione(data: str | None) -> dict[str, object]:
+    struttura = {"date": data, "type": "ESTIMATED"} if data else {}
+    return {
+        "study": {"protocolSection": {"statusModule": {"primaryCompletionDateStruct": struttura}}}
+    }
+
+
+def _mock_history(nct: str = "NCT01") -> dict[int, respx.Route]:
+    base = f"https://clinicaltrials.gov/api/int/studies/{nct}/history"
+    respx.get(base).mock(return_value=httpx.Response(200, json=_HISTORY_INDEX))
+    date_per_versione = {0: "2021-12", 1: "2021-12", 2: "2024-12", 3: "2025-12"}
+    return {
+        v: respx.get(f"{base}/{v}").mock(return_value=httpx.Response(200, json=_versione(d)))
+        for v, d in date_per_versione.items()
+    }
+
+
+@respx.mock
+def test_schedule_history_ricostruisce_i_rinvii() -> None:
+    _mock_history()
+    storia = ClinicalTrialsProvider().get_schedule_history("NCT01")
+
+    assert storia is not None
+    assert storia.revisions_total == 4
+    assert storia.first_declared_date == date(2021, 12, 1)
+    assert storia.current_declared_date == date(2025, 12, 1)
+    assert storia.times_postponed == 2
+    # Quattro anni esatti fra la prima data annunciata e quella attuale.
+    assert storia.total_slip_months is not None
+    assert 47 < storia.total_slip_months < 49
+    assert [(c.previous_date, c.new_date) for c in storia.changes] == [
+        (date(2021, 12, 1), date(2024, 12, 1)),
+        (date(2024, 12, 1), date(2025, 12, 1)),
+    ]
+
+
+@respx.mock
+def test_schedule_history_salta_le_versioni_senza_study_status() -> None:
+    """Le revisioni che non toccano lo stato non possono cambiare le date.
+
+    Verificato su REGAL: nessun cambio di data sfugge a questa etichetta, e
+    saltare le altre versioni fa scendere le richieste da 10 a 3.
+    """
+    rotte = _mock_history()
+    ClinicalTrialsProvider().get_schedule_history("NCT01")
+
+    assert rotte[0].called, "la versione iniziale serve come punto di partenza"
+    assert not rotte[1].called, "revisione senza 'Study Status': non va scaricata"
+    assert rotte[2].called and rotte[3].called
+
+
+@respx.mock
+def test_schedule_history_assente_non_e_un_errore() -> None:
+    """Un endpoint interno può sparire: l'analisi deve proseguire lo stesso."""
+    respx.get("https://clinicaltrials.gov/api/int/studies/NCT404/history").mock(
+        return_value=httpx.Response(404)
+    )
+    assert ClinicalTrialsProvider().get_schedule_history("NCT404") is None
+
+
+@respx.mock
+def test_schedule_history_senza_rinvii() -> None:
+    base = "https://clinicaltrials.gov/api/int/studies/NCT02/history"
+    respx.get(base).mock(
+        return_value=httpx.Response(
+            200, json={"changes": [{"version": 0, "date": "2025-01-01", "moduleLabels": []}]}
+        )
+    )
+    respx.get(f"{base}/0").mock(return_value=httpx.Response(200, json=_versione("2026-03")))
+
+    storia = ClinicalTrialsProvider().get_schedule_history("NCT02")
+    assert storia is not None
+    assert storia.times_postponed == 0
+    assert storia.changes == []
+    assert storia.total_slip_days == 0

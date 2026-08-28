@@ -13,8 +13,13 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from biocatalyst.models.analysis import Catalyst, FinancialMetrics, TAMEstimate
-from biocatalyst.models.raw_data import MarketData
+from biocatalyst.models.analysis import (
+    Catalyst,
+    FinancialMetrics,
+    PhaseBaseRate,
+    TAMEstimate,
+)
+from biocatalyst.models.raw_data import MarketData, TrialScheduleHistory
 
 Rating = Literal["BUY", "HOLD", "SELL"]
 
@@ -93,6 +98,10 @@ class SourceQuality(BaseModel):
     #: prezzo). Distinti dai dati mancanti: qui il numero c'è, ma non va
     #: preso per buono senza verificarlo.
     warnings: list[str] = Field(default_factory=list)
+    #: Cifre che compaiono nella prosa ma non hanno riscontro in nessun dato
+    #: raccolto: vengono dalla conoscenza del modello. Non sono errori — è
+    #: l'elenco di ciò che il lettore deve verificare prima di farci conto.
+    unverified_figures: list[str] = Field(default_factory=list)
 
 
 class ReportSections(BaseModel):
@@ -123,6 +132,11 @@ class Report(BaseModel):
     #: nei soli dati grezzi.
     market_snapshot: MarketData | None = None
     catalysts: list[Catalyst]
+    #: Storico dei rinvii della lettura attesa, quando ricostruibile.
+    schedule_history: TrialScheduleHistory | None = None
+    #: Tasso storico di successo della fase, come riferimento per le
+    #: probabilità degli scenari. Non le sostituisce: le rende confrontabili.
+    base_rate: PhaseBaseRate | None = None
     scenarios: ScenarioAnalysis
     expected_value: ExpectedValueAnalysis
     acquisition: AcquisitionAssessment

@@ -12,8 +12,18 @@ from biocatalyst.analysis.validation import (
     check_analyst_target,
     collect_data_warnings,
 )
-from biocatalyst.models.analysis import Catalyst, FinancialMetrics, TAMEstimate
-from biocatalyst.models.raw_data import MarketData
+from biocatalyst.models.analysis import (
+    Catalyst,
+    FinancialMetrics,
+    PhaseBaseRate,
+    TAMEstimate,
+)
+from biocatalyst.models.raw_data import (
+    DrugSpending,
+    MarketData,
+    ScheduleRevision,
+    TrialScheduleHistory,
+)
 from biocatalyst.models.report import (
     AcquisitionAssessment,
     ExpectedValueAnalysis,
@@ -394,3 +404,112 @@ def test_la_chiave_sconosciuta_non_solleva() -> None:
     from biocatalyst.i18n import t
 
     assert t("en", "chiave.inesistente") == "chiave.inesistente"
+
+
+# --- Storico dei rinvii e popolazione trattata ------------------------------
+
+
+def _storia() -> TrialScheduleHistory:
+    """Lo storico reale di REGAL (NCT04229979), verificato sul registro."""
+    return TrialScheduleHistory(
+        nct_id="NCT04229979",
+        revisions_total=10,
+        first_declared_date=date(2021, 12, 1),
+        current_declared_date=date(2025, 12, 1),
+        changes=[
+            ScheduleRevision(
+                revised_on=date(2023, 1, 27),
+                previous_date=date(2021, 12, 1),
+                new_date=date(2024, 12, 1),
+            ),
+            ScheduleRevision(
+                revised_on=date(2025, 9, 26),
+                previous_date=date(2024, 12, 1),
+                new_date=date(2025, 12, 1),
+            ),
+        ],
+    )
+
+
+@pytest.mark.parametrize("language", ["it", "en"])
+def test_markdown_mostra_lo_storico_dei_rinvii(language: ReportLanguage) -> None:
+    md = render_markdown(_report(language=language, schedule_history=_storia()))
+
+    assert "NCT04229979" in md
+    assert "2021-12-01 → 2024-12-01" in md
+    assert "2024-12-01 → 2025-12-01" in md
+    # Il numero di rinvii e i 48 mesi di slittamento sono il punto della sezione.
+    assert LABELS[language]["times_postponed"] in md
+    assert "48" in md
+    assert EXPLANATIONS[language]["schedule_history"][:40] in md
+
+
+def test_markdown_senza_storico_non_stampa_la_sezione() -> None:
+    md = render_markdown(_report(schedule_history=None))
+    assert LABELS["it"]["schedule_history"] not in md
+
+
+def test_html_mostra_lo_storico_dei_rinvii() -> None:
+    html = render_html(_report(language="en", schedule_history=_storia()))
+    assert "NCT04229979" in html
+    assert "2021-12-01" in html and "2025-12-01" in html
+    assert LABELS["en"]["times_postponed"] in html
+
+
+def test_popolazione_trattata_accanto_al_prezzo_verificato() -> None:
+    """Il conteggio dei beneficiari è un riscontro misurato sulla prevalenza."""
+    tam = TAMEstimate(
+        indication="AML",
+        prevalence_estimate="circa 20.000 pazienti l'anno",
+        pricing_comparable="Onureg",
+        comparable_drug_name="Onureg",
+        verified_pricing=DrugSpending(
+            brand_name="Onureg",
+            year=2024,
+            avg_spend_per_beneficiary_usd=129_238.0,
+            beneficiaries=1_842,
+            medicare_part="D",
+        ),
+        methodology_notes="stima",
+    )
+    md = render_markdown(_report(language="en", tam=tam))
+
+    assert "1,842" in md
+    assert LABELS["en"]["treated_population"] in md
+    assert EXPLANATIONS["en"]["treated_population"][:40] in md
+
+
+# --- Tasso storico di riferimento -------------------------------------------
+
+
+def _base_rate() -> PhaseBaseRate:
+    return PhaseBaseRate(
+        phase="PHASE3",
+        area="hematology",
+        transition_pct=57.8,
+        approval_pct=23.9,
+        source="BIO, Informa Pharma Intelligence & QLS",
+        data_through_year=2020,
+    )
+
+
+@pytest.mark.parametrize("language", ["it", "en"])
+def test_markdown_mostra_il_tasso_storico(language: ReportLanguage) -> None:
+    md = render_markdown(_report(language=language, base_rate=_base_rate()))
+
+    assert "58%" in md
+    assert "24%" in md
+    assert LABELS[language]["base_rate"] in md
+    # La fonte e l'anno devono comparire: non è un dato da API.
+    assert "BIO" in md
+    assert "2020" in md
+
+
+def test_la_spiegazione_del_tasso_avverte_che_non_e_la_probabilita_del_titolo() -> None:
+    """Confondere i due significati è l'errore di lettura più facile."""
+    assert "not the probability that the stock goes up" in EXPLANATIONS["en"]["base_rate"]
+    assert "non è la probabilità che il titolo" in EXPLANATIONS["it"]["base_rate"]
+
+
+def test_markdown_senza_tasso_storico_non_stampa_la_sezione() -> None:
+    assert LABELS["it"]["base_rate"] not in render_markdown(_report(base_rate=None))

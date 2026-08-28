@@ -67,6 +67,8 @@ src/biocatalyst/
 │   ├── catalysts.py      # estrazione e ordinamento per imminenza
 │   ├── metrics.py        # compute_financial_metrics() -> (metriche, note)
 │   ├── validation.py     # controlli di plausibilità (target price)
+│   ├── base_rates.py     # tassi storici di successo per fase (letteratura)
+│   ├── claims.py         # cifre della prosa senza riscontro nei dati
 │   └── screening.py      # filtri e punteggio di attrattività
 ├── agents/         # i 4 agenti + pipeline — FATTO (Fase 5)
 │   ├── base.py     #   BaseAgent: run(context)->context, chiavi richieste
@@ -154,6 +156,16 @@ src/biocatalyst/
 | **Il prezzo del comparatore è verificato sui dati CMS, non lasciato al modello** | La stima del TAM era l'unica parte del report che poggiava interamente sulla memoria del modello. CMS pubblica la spesa Medicare effettiva per farmaco, compresa la media annua per beneficiario. Ora il modello sceglie *quale* farmaco sia il comparatore (giudizio di dominio) e il sistema ne verifica il prezzo. Su SLS il modello dichiarava $240-300k di listino per Onureg, il dato CMS dice **$129.238**: circa la metà. Se il farmaco non è nei dati Medicare, `verified_pricing` resta nullo e il report lo dichiara |
 | **Il modello non deve commentare `verified_pricing`** | La verifica avviene *dopo* la sua risposta, quindi scriveva "no Medicare data were supplied, verified_pricing is null" mentre il report poi lo mostrava compilato. Il prompt ora glielo dice esplicitamente |
 | **Rimosse `responses` e `vcrpy` dalle dipendenze di sviluppo** | Sostituite da `respx` in Fase 3 ma mai tolte: nessun import in tutto il progetto |
+| **Storico dei rinvii di uno studio da CT.gov** (`/api/int/studies/{nct}/history`) | "In ritardo di 268 giorni" non dice se è la prima volta o la quarta: sono due storie diverse e il modello non aveva modo di distinguerle. Il registro conserva ogni revisione. Verificato su REGAL: la data è passata da 2021-12 a 2025-12 in **tre rinvii, 48 mesi**. L'endpoint è interno (non l'API v2 documentata), quindi può cambiare senza preavviso: ogni errore vale "storia non disponibile" e non blocca mai l'analisi |
+| **Solo le versioni etichettate `Study Status` vengono scaricate** | Le date stanno nello `statusModule`, quindi ogni loro cambio risulta segnalato da quell'etichetta — verificato su tutte e 10 le versioni di REGAL, nessun cambio sfuggiva. Le richieste scendono da 10 a 3 |
+| **Le versioni passate hanno TTL di 30 giorni, l'indice quello normale** | Una versione già pubblicata non cambia più: rileggerla è spreco. Solo l'indice va riletto per scoprire quelle nuove |
+| **`TAMDraft` separato da `TAMEstimate`** | Il modello continuava a scrivere "the verified Medicare spending field is left null as instructed" in un report che due righe sotto lo mostrava compilato: obbediva all'istruzione e la raccontava. Un prompt migliore non bastava — il campo è stato tolto dallo schema che il modello compila, come già fatto con l'aritmetica in `ReportDraft`. La contraddizione è ora strutturalmente impossibile |
+| **Il prezzo verificato viene passato anche allo scrittore** | Difetto trovato leggendo il report: la verifica CMS avviene dopo l'analista, ma lo scrittore riceveva solo la stima non verificata. Il testo diceva $240-300k mentre la tabella accanto diceva $129.238. Ora riceve entrambe e gli si chiede di spiegare la differenza (listino contro spesa netta) |
+| **Tassi storici di successo come ancoraggio delle probabilità** | Le probabilità degli scenari sono il numero meno fondato del report e quello su cui si calcola l'expected value: il modello le sceglieva senza alcun riferimento. Ora accanto compare il tasso storico di transizione di fase. **Non è una fonte interrogabile** — unica eccezione nel progetto: sono valori di letteratura (BIO/Informa/QLS, dati fino al 2020) trascritti a mano, e il report cita sempre fonte e anno |
+| **Ematologia valutata prima dell'oncologia** nel riconoscimento dell'area | Una leucemia contiene spesso "cancer" nelle condizioni, ma i tumori del sangue hanno una probabilità di approvazione del 23,9% contro il 5,3% dei solidi: confonderli darebbe il riferimento sbagliato per un fattore quattro |
+| **La sigla "ALL" esclusa dalle parole chiave** | Come parola intera coincide con l'inglese "all": classificava "all solid tumors" fra i tumori del sangue. Stessa famiglia di errore già vista con "OS" dentro "dose" |
+| **Elenco delle cifre non verificate in fondo al report** | La prosa mescola numeri misurati e numeri che il modello ricorda ("la sopravvivenza mediana storica è 6-12 mesi"), stampati uguali e quindi apparentemente ugualmente solidi. Ora le cifre senza riscontro nei dati raccolti sono elencate a parte. Misurato su SLS: **una sola segnalazione**, genuina. È una rete, non una garanzia — con 150+ valori noti una cifra può coincidere per caso — e il report lo dichiara |
+| **La raccolta dei valori noti include le proprietà calcolate** | I mesi di slittamento esistono solo come proprietà, non come campo: senza guardarle il "48 mesi" del testo risultava non verificato pur essendo un nostro calcolo |
 | **Token esauriti = errore NON ritentabile** | `deepseek-v4-flash` e `deepseek-v4-pro` sono modelli di ragionamento e possono consumare tutto `max_tokens` nel reasoning, restituendo contenuto vuoto con `finish_reason="length"`. Ritentare fallirebbe identicamente, a pagamento |
 
 ## Rischi noti da tenere presenti nelle fasi successive
@@ -183,6 +195,18 @@ src/biocatalyst/
 - **Frankfurter nei weekend/festivi** restituisce silenziosamente l'ultimo giorno lavorativo: si cita sempre la data *della risposta*, non quella richiesta.
 
 ## Non verificato (dichiarato, non nascosto)
+
+- **I tassi storici di successo non sono verificabili eseguendo il codice.**
+  Sono l'unica eccezione al metodo di questo progetto: non esiste una fonte
+  gratuita e interrogabile per i tassi di transizione di fase, quindi
+  `analysis/base_rates.py` contiene valori di letteratura trascritti a mano
+  (BIO/Informa/QLS, dati fino al 2020). Vanno confrontati con la pubblicazione
+  originale e aggiornati quando ne esce una nuova. Il report cita sempre fonte
+  e anno accanto alla cifra proprio perché il lettore possa farlo.
+- **L'endpoint dello storico revisioni CT.gov è interno** (`/api/int/`), non
+  documentato nell'API v2 pubblica. Funziona oggi (verificato su più studi) ma
+  può cambiare senza preavviso: il codice tratta ogni errore come "storia non
+  disponibile".
 
 - **La CI non è mai stata eseguita su GitHub**: il file è YAML valido e tutti i
   suoi comandi passano in locale, ma il comportamento su runner GitHub (cache

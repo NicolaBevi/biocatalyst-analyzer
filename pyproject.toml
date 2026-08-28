@@ -1,6 +1,6 @@
 [project]
 name = "biocatalyst-analyzer"
-version = "1.0.0"
+version = "1.1.0"
 description = "Report di due diligence multi-agente su aziende biotech/pharma NASDAQ/NYSE, focalizzati su catalizzatori clinici e regolatori a breve termine."
 readme = "README.md"
 requires-python = ">=3.11"

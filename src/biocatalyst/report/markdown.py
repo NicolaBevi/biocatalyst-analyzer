@@ -109,10 +109,17 @@ def render_markdown(report: Report) -> str:
                 f"${vp.avg_spend_per_beneficiary_usd:,.0f} {lb('per_beneficiary')} "
                 f"(Medicare Part {vp.medicare_part}, {vp.year}, CMS)"
             )
+            if vp.beneficiaries is not None:
+                parts.append(
+                    f"- **{lb('treated_population')}**: {vp.beneficiaries:,} "
+                    f"{lb('beneficiaries_unit')} ({vp.year})"
+                )
         parts.append(f"\n{report.tam.methodology_notes}\n")
         parts.append(_nota(ex("tam")))
         if vp is not None:
             parts.append(_nota(ex("verified_pricing")))
+            if vp.beneficiaries is not None:
+                parts.append(_nota(ex("treated_population")))
 
     # --- Catalizzatori --------------------------------------------------------
     parts.append(f"\n## {lb('sec_catalyst')}\n")
@@ -136,6 +143,25 @@ def render_markdown(report: Report) -> str:
         parts.append("")
         parts.append(_nota(ex("catalysts")))
 
+    storia = report.schedule_history
+    if storia is not None and storia.changes:
+        parts.append(f"\n### {lb('schedule_history')}\n")
+        parts.append(f"_{storia.nct_id}_\n")
+        parts.append("| | |\n|---|---|")
+        parts.append(f"| {lb('first_declared')} | {storia.first_declared_date} |")
+        parts.append(f"| {lb('current_declared')} | {storia.current_declared_date} |")
+        parts.append(f"| {lb('times_postponed')} | **{storia.times_postponed}** |")
+        mesi = storia.total_slip_months
+        if mesi is not None:
+            parts.append(f"| {lb('total_slip')} | **{mesi:,.0f} {lb('months')}** |")
+        parts.append("")
+        for revisione in storia.changes:
+            parts.append(
+                f"- {revisione.revised_on}: {revisione.previous_date} → {revisione.new_date}"
+            )
+        parts.append("")
+        parts.append(_nota(ex("schedule_history")))
+
     # --- Scenari --------------------------------------------------------------
     parts.append(f"\n## {lb('sec_scenarios')}\n")
     for chiave, scenario in (
@@ -146,6 +172,18 @@ def render_markdown(report: Report) -> str:
         parts.append(_scenario_riga(lb(chiave), scenario))
     parts.append("")
     parts.append(_nota(ex("scenarios")))
+
+    br = report.base_rate
+    if br is not None:
+        parts.append(f"\n### {lb('base_rate')}\n")
+        parts.append(f"_{br.label}_\n")
+        parts.append("| | |\n|---|---|")
+        parts.append(f"| {lb('base_rate_transition')} | **{br.transition_pct:.0f}%** |")
+        if br.approval_pct is not None:
+            parts.append(f"| {lb('base_rate_approval')} | {br.approval_pct:.0f}% |")
+        parts.append(f"| {lb('base_rate_source')} | {br.source} ({br.data_through_year}) |")
+        parts.append("")
+        parts.append(_nota(ex("base_rate")))
 
     # --- Valore atteso --------------------------------------------------------
     ev = report.expected_value
@@ -193,6 +231,13 @@ def render_markdown(report: Report) -> str:
     else:
         parts.append(f"- {lb('none')}")
     parts.append(_nota(ex("short_interest")))
+
+    parts.append(f"\n**{lb('unverified_figures')}**\n")
+    if report.source_quality.unverified_figures:
+        parts.extend(f"- {f}" for f in report.source_quality.unverified_figures)
+    else:
+        parts.append(f"- {lb('none')}")
+    parts.append(_nota(ex("unverified_figures")))
 
     # --- Avvertenza -----------------------------------------------------------
     parts.append(f"\n---\n\n**{lb('disclaimer_title')}** — {DISCLAIMER[lang]}\n")

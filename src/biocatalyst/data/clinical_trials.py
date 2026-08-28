@@ -6,25 +6,49 @@ Due particolarità della fonte, gestite qui:
    effettivo va quindi rifatto lato client.
 2. Le date stimate possono essere parziali ("2027-04"): sono normalizzate al
    primo giorno del mese da `parse_flexible_date`.
+3. Lo storico delle revisioni di un record sta su `/api/int/`, che **non fa
+   parte dell'API v2 documentata**: è l'endpoint usato dalla pagina web del
+   registro. Vale la pena appoggiarcisi perché il dato non è ottenibile
+   altrimenti ed è molto informativo (vedi `get_schedule_history`), ma essendo
+   interno può cambiare senza preavviso: ogni errore qui è trattato come
+   "storia non disponibile" e non blocca mai il resto dell'analisi.
 """
 
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from typing import Any, ClassVar
 
 from biocatalyst.data.base import (
+    DataProviderError,
     HTTPDataProvider,
     RateLimiter,
     parse_flexible_date,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
-from biocatalyst.models.raw_data import ClinicalTrial
+from biocatalyst.models.raw_data import (
+    ClinicalTrial,
+    ScheduleRevision,
+    TrialScheduleHistory,
+)
 
 logger = get_logger(__name__)
 
 STUDIES_URL = "https://clinicaltrials.gov/api/v2/studies"
+HISTORY_URL = "https://clinicaltrials.gov/api/int/studies/{nct_id}/history"
+HISTORY_VERSION_URL = "https://clinicaltrials.gov/api/int/studies/{nct_id}/history/{version}"
+
+#: Modulo che contiene le date di completamento. Verificato su REGAL: ogni
+#: cambio della data risulta segnalato da questa etichetta, quindi le altre
+#: versioni si possono saltare senza perdere informazione (10 richieste
+#: diventano 3). La versione 0 non ha etichette perché è il deposito iniziale.
+STATUS_MODULE_LABEL = "Study Status"
+
+#: Una versione già pubblicata non cambia più: si può conservare a lungo.
+#: Solo l'indice delle versioni va riletto per scoprire quelle nuove.
+IMMUTABLE_VERSION_TTL = 30 * 86_400
 
 #: La chiave di cache include l'impronta dei campi richiesti: aggiungerne uno
 #: senza cambiarla farebbe servire all'infinito la risposta vecchia, priva del
@@ -88,6 +112,78 @@ class ClinicalTrialsProvider(HTTPDataProvider):
                 continue
             trials.append(trial)
         return trials
+
+    def get_schedule_history(self, nct_id: str) -> TrialScheduleHistory | None:
+        """Storico delle date di completamento dichiarate per uno studio.
+
+        Risponde a una domanda che il solo dato corrente non può risolvere: un
+        ritardo è un episodio o un andamento? Su REGAL la data è stata spostata
+        tre volte, da dicembre 2021 a dicembre 2025.
+
+        Restituisce None se lo storico non è disponibile: è un
+        approfondimento, non deve mai far fallire l'analisi.
+        """
+        try:
+            indice = self._get_json(
+                HISTORY_URL.format(nct_id=nct_id),
+                ttl_seconds=self.trial_ttl_seconds,
+                cache_key=f"ctgov:histindex:{nct_id}",
+            )
+        except DataProviderError as exc:
+            logger.info("storico_studio_non_disponibile", nct_id=nct_id, errore=str(exc)[:200])
+            return None
+
+        versioni = indice.get("changes") or []
+        if not versioni:
+            return None
+
+        da_leggere = [
+            i
+            for i, v in enumerate(versioni)
+            if i == 0 or STATUS_MODULE_LABEL in (v.get("moduleLabels") or [])
+        ]
+
+        cambi: list[ScheduleRevision] = []
+        prima: date | None = None
+        precedente: date | None = None
+        corrente: date | None = None
+
+        for i in da_leggere:
+            dichiarata = self._declared_completion(nct_id, i)
+            if i == da_leggere[0]:
+                prima = dichiarata
+            elif dichiarata != precedente:
+                cambi.append(
+                    ScheduleRevision(
+                        revised_on=parse_flexible_date(versioni[i].get("date")) or date.today(),
+                        previous_date=precedente,
+                        new_date=dichiarata,
+                    )
+                )
+            precedente = dichiarata
+            corrente = dichiarata
+
+        return TrialScheduleHistory(
+            nct_id=nct_id,
+            revisions_total=len(versioni),
+            first_declared_date=prima,
+            current_declared_date=corrente,
+            changes=cambi,
+        )
+
+    def _declared_completion(self, nct_id: str, version: int) -> date | None:
+        """Data di completamento primario dichiarata in una singola versione."""
+        try:
+            payload = self._get_json(
+                HISTORY_VERSION_URL.format(nct_id=nct_id, version=version),
+                ttl_seconds=IMMUTABLE_VERSION_TTL,
+                cache_key=f"ctgov:histver:{nct_id}:{version}",
+            )
+        except DataProviderError:
+            return None
+        stato = (payload.get("study", {}).get("protocolSection", {}).get("statusModule", {})) or {}
+        struttura = stato.get("primaryCompletionDateStruct") or {}
+        return parse_flexible_date(struttura.get("date"))
 
 
 def _is_lead_sponsor(lead_sponsor: str | None, wanted: str) -> bool:

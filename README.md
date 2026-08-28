@@ -88,6 +88,7 @@ localised too, so an English report contains no Italian leftovers.
 │  · openFDA    Drugs@FDA  │   │ DETERMINISTIC MATHS (analysis/)       │
 │  · Finnhub    news       │   │  burn rate · cash runway · squeeze    │
 │  · CMS drug spending     │
+│  · CT.gov record history │
 │  · Frankfurter EUR/USD   │   │  dilution · EV/ROI · catalysts        │
 │                          │   │  100% test coverage                   │
 │  on-disk cache, per-key  │   └───────────────────────────────────────┘
@@ -109,7 +110,7 @@ git clone <repo-url> && cd biocatalyst-analyzer
 uv sync
 
 cp .env.example .env      # then fill in .env, see below
-uv run pytest             # 385 tests, everything should be green
+uv run pytest             # 434 tests, everything should be green
 ```
 
 ### Minimum configuration
@@ -191,6 +192,9 @@ from a prediction.
 | **An overdue trial is not a finished trial** | Found while testing SLS (SELLAS): the Phase 3 REGAL trial had an *estimated* completion date 268 days in the past but a status of `ACTIVE_NOT_RECRUITING`. Filtering it out as "past" made the asset that actually explains the valuation disappear from the report. An **estimated** past date on an active trial means overdue — potentially the most imminent catalyst of all; an **actual** past date means it really happened |
 | **Event-driven endpoints detected from the outcome text** | A survival-endpoint trial closes when a set number of events has occurred, not on a date. A delay may mean events are accruing more slowly than modelled — a meaningful reading, not a certainty. The delay is also sized against the planned duration, and the model is asked to weigh it against the control arm's historical median survival rather than dismissing it as ambiguous |
 | **The non-root user is created before installing dependencies** | A `chown -R /app` after `uv sync` duplicates the whole virtual environment into a new layer: 547 MB wasted out of 1.71 GB. Creating the user first and using `COPY --chown` brought the image down to 995 MB |
+| **A trial's postponement history, from the CT.gov record archive** | "268 days overdue" does not say whether it is the first time or the fourth — two different stories the model had no way to tell apart. The registry keeps every revision of a record. Verified on REGAL: the date moved from 2021-12 to 2025-12 across **three postponements, 48 months**. The endpoint is internal rather than part of the documented v2 API, so any error there means "history unavailable" and never blocks the analysis |
+| **Historical phase-success rates as an anchor for the scenario probabilities** | Those probabilities are the least grounded number in the report and the one expected value is computed from, yet the model picked them with no reference at all. The historical phase-transition rate now sits beside them. **This is the one figure in the project that does not come from a queryable source**: it is literature (BIO/Informa/QLS, data through 2020) transcribed by hand, and the report always cites source and year |
+| **A list of unverified figures at the end of the report** | The prose mixes measured numbers with numbers the model remembers ("historical median OS is 6–12 months"), printed identically and so apparently equally solid. Figures with no match in the collected data are now listed separately. Measured on SLS: **a single flag**, a genuine one. It is a net rather than a guarantee — among 150+ known values a figure can coincide by chance — and the report says so |
 | **The comparator's price is verified against CMS data, not left to the model** | The TAM estimate was the only part of the report resting entirely on the model's memory. CMS publishes actual Medicare spending per drug, including average annual spend per beneficiary. The model now picks *which* drug is the right comparator — a domain judgement — and the system verifies its price. On SLS the model quoted a $240–300k list price for Onureg; the CMS figure is **$129,238**, about half. If the drug is absent from Medicare data the field stays null and the report says so |
 | **A chain of alternative XBRL concepts** | Ensysce uses `NetIncomeLoss` through 2021 and `ProfitLoss` from 2022. With a single concept, net income was missing on 34 periods out of 34, making burn rate impossible to compute |
 | **Burn rate from net income, not from the cash decline** | Between Q3 and Q4 2025 Ensysce's cash *rises* because of a capital raise: measuring the cash decline would report "negative burn" while the company was in fact burning cash |
@@ -233,7 +237,7 @@ uv run mypy src
 uv run pytest
 ```
 
-385 tests. The calculation layer (`analysis/`) is covered at **100%**: those
+434 tests. The calculation layer (`analysis/`) is covered at **100%**: those
 are the numbers people make decisions on, and an error there would not be
 flagged by any API. External calls are mocked with `respx`; no test touches
 the network.

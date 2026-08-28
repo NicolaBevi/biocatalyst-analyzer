@@ -56,6 +56,7 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "comparable_deals": "Operazioni comparabili recenti",
         "sources_consulted": "Fonti consultate",
         "missing_data": "Dati non reperiti",
+        "unverified_figures": "Cifre non verificate dal sistema",
         "warnings": "Avvisi sulla qualità del dato",
         "none": "nessuno",
         "not_available": "non disponibile",
@@ -71,6 +72,17 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "event_driven": "endpoint a eventi",
         "verified_pricing": "Prezzo verificato (spesa Medicare)",
         "per_beneficiary": "per beneficiario/anno",
+        "treated_population": "Popolazione trattata (Medicare)",
+        "beneficiaries_unit": "beneficiari",
+        "schedule_history": "Storico delle date dichiarate",
+        "base_rate": "Tasso storico di successo (riferimento)",
+        "base_rate_transition": "Studi che superano questa fase",
+        "base_rate_approval": "Studi che arrivano all'approvazione",
+        "base_rate_source": "Fonte",
+        "first_declared": "Prima data annunciata",
+        "current_declared": "Data attuale",
+        "times_postponed": "Rinvii",
+        "total_slip": "Slittamento complessivo",
         "glossary": "Come leggere questo report",
         "disclaimer_title": "Avvertenza",
     },
@@ -118,6 +130,7 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "comparable_deals": "Recent comparable deals",
         "sources_consulted": "Sources consulted",
         "missing_data": "Data not retrieved",
+        "unverified_figures": "Figures the system could not verify",
         "warnings": "Data quality warnings",
         "none": "none",
         "not_available": "not available",
@@ -133,6 +146,17 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "event_driven": "event-driven endpoint",
         "verified_pricing": "Verified pricing (Medicare spending)",
         "per_beneficiary": "per beneficiary per year",
+        "treated_population": "Treated population (Medicare)",
+        "beneficiaries_unit": "beneficiaries",
+        "schedule_history": "History of declared dates",
+        "base_rate": "Historical success rate (reference)",
+        "base_rate_transition": "Trials that clear this phase",
+        "base_rate_approval": "Trials that reach approval",
+        "base_rate_source": "Source",
+        "first_declared": "First announced date",
+        "current_declared": "Current date",
+        "times_postponed": "Postponements",
+        "total_slip": "Total slippage",
         "glossary": "How to read this report",
         "disclaimer_title": "Disclaimer",
     },
@@ -204,6 +228,42 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
             "grandezza e non un prezzo di listino. Se manca, significa che il farmaco "
             "citato non compare nei dati Medicare e la stima resta non verificata."
         ),
+        "schedule_history": (
+            "ClinicalTrials.gov conserva ogni revisione della scheda di uno studio: questa "
+            "tabella ricostruisce come la data di completamento attesa è cambiata nel tempo. "
+            "Serve a distinguere un rinvio isolato — che può capitare a qualsiasi studio — da "
+            "una serie di rinvii, che descrive uno studio più lento del previsto fin "
+            "dall'inizio. È un dato misurato sul registro, non una deduzione: "
+            "l'interpretazione resta al lettore."
+        ),
+        "unverified_figures": (
+            "Queste cifre compaiono nel testo del report ma non corrispondono a nessun dato "
+            "raccolto dalle fonti: vengono dalla conoscenza del modello linguistico. Non "
+            "sono per forza sbagliate — spesso sono corrette — ma nessuno le ha verificate, "
+            "e stampate accanto alle altre sembrerebbero avere la stessa solidità. È "
+            "l'elenco di ciò che conviene controllare prima di farci affidamento. Il "
+            "controllo è una rete, non una garanzia: fra i molti valori misurati di un "
+            "report una cifra può coincidere per caso con un dato che non c'entra, quindi "
+            "un elenco vuoto non dimostra che ogni numero sia fondato."
+        ),
+        "base_rate": (
+            "Quota storica di studi che, arrivati a questo stadio, hanno superato la fase. "
+            "Serve a dare un metro alle probabilità degli scenari qui sopra, che il modello "
+            "linguistico stabilisce con un giudizio: se assegna allo scenario rialzista una "
+            "probabilità molto lontana da questa, la differenza deve essere motivata dalle "
+            "condizioni dello scenario. Attenzione: **non è la probabilità che il titolo "
+            "salga**, ed è una media di settore che non conosce questo studio in "
+            "particolare. A differenza degli altri dati del report non arriva da un'API "
+            "interrogabile ma da una pubblicazione, citata qui sotto con l'anno: va "
+            "considerata un ordine di grandezza."
+        ),
+        "treated_population": (
+            "Numero di beneficiari Medicare effettivamente trattati con il farmaco "
+            "comparabile nell'anno indicato. Non è la prevalenza della malattia, ma un "
+            "riscontro misurato sulla popolazione realmente in terapia: se la stima di "
+            "prevalenza qui sopra è di ordini di grandezza diversa, vale la pena chiedersi "
+            "perché. Copre i soli assistiti Medicare, quindi è un limite inferiore."
+        ),
         "tam": (
             "Stima del mercato potenziale del farmaco principale, prodotta dal modello "
             "linguistico a partire da dati di prevalenza e prezzi di terapie comparabili. È una "
@@ -269,6 +329,41 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
             "beneficiary treated with that drug. It covers the Medicare population only, "
             "so it is an order of magnitude rather than a list price. If absent, the drug "
             "cited is not in the Medicare data and the estimate remains unverified."
+        ),
+        "schedule_history": (
+            "ClinicalTrials.gov keeps every revision of a study record: this table "
+            "reconstructs how the expected completion date changed over time. It separates a "
+            "one-off postponement — which can happen to any trial — from a series of them, "
+            "which describes a study that has been running slower than planned from the "
+            "start. It is measured from the registry, not inferred: the interpretation is "
+            "left to the reader."
+        ),
+        "unverified_figures": (
+            "These figures appear in the report text but match no data collected from the "
+            "sources: they come from the language model's own knowledge. They are not "
+            "necessarily wrong — often they are right — but nobody has verified them, and "
+            "printed alongside the rest they would look equally solid. This is the list "
+            "worth checking before relying on it. The check is a net, not a guarantee: among "
+            "the many measured values in a report a figure can coincide by chance with an "
+            "unrelated one, so an empty list does not prove every number is grounded."
+        ),
+        "base_rate": (
+            "The share of trials that historically cleared this phase once they reached "
+            "this stage. It gives a yardstick for the scenario probabilities above, which "
+            "the language model sets by judgement: if it assigns the bull case a "
+            "probability far from this figure, the gap should be justified by the scenario "
+            "conditions. Note: this is **not the probability that the stock goes up**, and "
+            "it is an industry average that knows nothing about this particular trial. "
+            "Unlike the other figures in this report it does not come from a queryable API "
+            "but from a publication, cited below with its year: treat it as an order of "
+            "magnitude."
+        ),
+        "treated_population": (
+            "Number of Medicare beneficiaries actually treated with the comparable drug in "
+            "the year shown. This is not disease prevalence but a measured count of the "
+            "population genuinely on therapy: if the prevalence estimate above is orders of "
+            "magnitude away from it, that is worth questioning. It covers Medicare enrollees "
+            "only, so it is a lower bound."
         ),
         "tam": (
             "Estimate of the lead drug's addressable market, produced by the language model "

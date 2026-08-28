@@ -16,6 +16,7 @@ from typing import Any, ClassVar
 from biocatalyst.agents.base import KEY_ANALYSIS, KEY_RAW_DATA, BaseAgent, append_missing
 from biocatalyst.agents.prompts import ANALYST_SYSTEM
 from biocatalyst.analysis import catalysts_from_trials, compute_financial_metrics
+from biocatalyst.analysis.base_rates import base_rate_for
 from biocatalyst.analysis.catalysts import is_event_driven, materiality, overdue_days
 from biocatalyst.data.base import DataProviderError
 from biocatalyst.data.factory import DataProviders
@@ -26,10 +27,15 @@ from biocatalyst.log import get_logger
 from biocatalyst.models.analysis import (
     AnalysisBundle,
     Catalyst,
+    TAMDraft,
     TAMEstimate,
     TrialAndMarketAssessment,
 )
-from biocatalyst.models.raw_data import ClinicalTrial, CompanyRawData
+from biocatalyst.models.raw_data import (
+    ClinicalTrial,
+    CompanyRawData,
+    TrialScheduleHistory,
+)
 from biocatalyst.models.report import ReportLanguage
 
 logger = get_logger(__name__)
@@ -71,29 +77,57 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
 
         clinical_assessment = None
         tam = None
+        storia = self._schedule_history(lead_trial)
         if lead_trial is not None:
             # Una sola chiamata per entrambe: il contesto del prompt è identico,
             # sdoppiarlo raddoppierebbe i token senza migliorare le risposte.
-            assessment = self._assess(raw, lead_trial, notes)
+            assessment = self._assess(raw, lead_trial, notes, storia)
             if assessment is not None:
                 clinical_assessment = assessment.clinical
                 tam = self._verify_pricing(assessment.tam)
         else:
             notes.append(t(self.language, "agent.no_lead_trial"))
 
+        base_rate = (
+            base_rate_for(lead_trial.phase, lead_trial.condition)
+            if lead_trial is not None
+            else None
+        )
+
         bundle = AnalysisBundle(
             metrics=metrics,
             catalysts=catalysts,
             clinical_assessment=clinical_assessment,
             tam=tam,
+            schedule_history=storia,
+            base_rate=base_rate,
             notes=notes,
         )
         context[KEY_ANALYSIS] = bundle
         append_missing(context, notes)
         return context
 
+    def _schedule_history(self, trial: ClinicalTrial | None) -> TrialScheduleHistory | None:
+        """Storico dei rinvii della data di lettura per lo studio di riferimento.
+
+        Si scarica solo per questo studio, non per l'intera pipeline: sono
+        alcune richieste per studio e servono a rispondere a una domanda sola,
+        quella sull'asset che pesa davvero sul prezzo.
+        """
+        if self.providers is None or trial is None:
+            return None
+        try:
+            return self.providers.clinical_trials.get_schedule_history(trial.nct_id)
+        except DataProviderError as exc:
+            logger.info("storico_date_non_recuperato", errore=str(exc)[:200])
+            return None
+
     def _assess(
-        self, raw: CompanyRawData, trial: ClinicalTrial, notes: list[str]
+        self,
+        raw: CompanyRawData,
+        trial: ClinicalTrial,
+        notes: list[str],
+        storia: TrialScheduleHistory | None = None,
     ) -> TrialAndMarketAssessment | None:
         prompt = (
             f"Azienda: {raw.company_name or raw.ticker}\n\n"
@@ -107,14 +141,12 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             f"- Endpoint primario: {trial.primary_outcome_measure or 'non disponibile'}\n"
             f"- Completamento atteso: {trial.primary_completion_date or 'non disponibile'}\n"
             f"- Patologia: {', '.join(trial.condition) or 'non specificata'}\n"
-            f"{_nota_ritardo(trial)}\n"
+            f"{_nota_ritardo(trial)}"
+            f"{_nota_storico(storia)}\n"
             "Valuta criticamente lo studio e stima il mercato potenziale del farmaco.\n"
             "Nel campo comparable_drug_name indica il NOME COMMERCIALE di un solo "
             "farmaco già approvato e commercializzato negli Stati Uniti che serva da "
-            "riferimento di prezzo per questa indicazione.\n"
-            "Il campo verified_pricing lo compila il sistema dopo la tua risposta, "
-            "cercando la spesa Medicare reale per quel farmaco: lascialo nullo e non "
-            "commentarlo, perché non puoi sapere cosa vi troverà."
+            "riferimento di prezzo per questa indicazione."
         )
         try:
             return complete_structured(
@@ -129,7 +161,7 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
             notes.append(t(self.language, "agent.assessment_failed", error=exc))
             return None
 
-    def _verify_pricing(self, tam: TAMEstimate) -> TAMEstimate:
+    def _verify_pricing(self, bozza: TAMDraft) -> TAMEstimate:
         """Cerca il prezzo reale del comparatore citato dal modello.
 
         Il modello sceglie quale farmaco sia il comparatore giusto — è un
@@ -138,10 +170,11 @@ class ClinicalFinancialAnalystAgent(BaseAgent):
         resta nullo e il report lo dichiara invece di far passare per dato la
         stima del modello.
         """
-        if self.providers is None or not tam.comparable_drug_name:
+        tam = TAMEstimate.model_validate(bozza.model_dump())
+        if self.providers is None or not bozza.comparable_drug_name:
             return tam
         try:
-            spesa = self.providers.drug_pricing.get_spending(tam.comparable_drug_name)
+            spesa = self.providers.drug_pricing.get_spending(bozza.comparable_drug_name)
         except DataProviderError as exc:
             logger.warning("verifica_prezzo_fallita", errore=str(exc)[:200])
             return tam
@@ -172,6 +205,36 @@ def _nota_ritardo(trial: ClinicalTrial) -> str:
             "ritardo (eventi più lenti del previsto, oppure difficoltà operative) senza "
             "presentarne una come certa.\n"
         )
+    return testo
+
+
+def _nota_storico(storia: TrialScheduleHistory | None) -> str:
+    """Espone quante volte la data di lettura è già stata spostata.
+
+    È la differenza fra un episodio e un andamento: un rinvio isolato è
+    rumore, tre rinvii in cinque anni descrivono uno studio che procede più
+    lentamente del previsto fin dall'inizio. Il dato è misurato dal registro,
+    non dedotto — al modello si chiede solo di interpretarlo.
+    """
+    if storia is None or not storia.changes:
+        return ""
+    righe = "; ".join(
+        f"il {c.revised_on} da {c.previous_date} a {c.new_date}" for c in storia.changes
+    )
+    mesi = storia.total_slip_months
+    testo = (
+        f"- STORICO DELLE DATE (fonte: registro CT.gov, dato misurato): la data di "
+        f"completamento è stata modificata {len(storia.changes)} volte — {righe}."
+    )
+    if mesi is not None and mesi > 0:
+        testo += (
+            f" Dalla prima data annunciata ({storia.first_declared_date}) a quella "
+            f"attuale ({storia.current_declared_date}) sono {mesi:.0f} mesi di slittamento."
+        )
+    testo += (
+        " Tieni conto di questo andamento nel valutare il ritardo: un rinvio isolato "
+        "e una serie di rinvii ripetuti non hanno lo stesso significato.\n"
+    )
     return testo
 
 
