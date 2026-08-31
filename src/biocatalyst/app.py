@@ -46,6 +46,20 @@ from biocatalyst.screening import (
 
 st.set_page_config(page_title="BioCatalyst Analyzer", page_icon="🧬", layout="wide")
 
+#: Chiavi di `st.session_state` condivise fra le due schede: servono a far
+#: partire un'analisi da un candidato dello screening senza ridigitarne il
+#: ticker. `st.tabs` accetta una `key`, quindi la scheda attiva si può anche
+#: cambiare da codice.
+TICKER_KEY = "ticker_input"
+#: Streamlit vieta di scrivere nella chiave di un widget già creato in quella
+#: passata, e la scheda di analisi viene resa prima di quella di screening: il
+#: ticker scelto viene quindi depositato qui e raccolto al giro successivo,
+#: prima che il campo esista.
+PENDING_TICKER_KEY = "ticker_pending"
+TAB_KEY = "active_tab"
+TAB_ANALYZE = "Analyze a ticker"
+TAB_SCREEN = "Screen for opportunities"
+
 TOTAL_AGENTS = 4
 
 
@@ -204,9 +218,20 @@ def _live_progress(job: Job) -> None:
 
 
 def _analyse_tab(language: str) -> None:
+    # Va fatto prima di creare il campo: dopo, Streamlit rifiuta la scrittura.
+    if PENDING_TICKER_KEY in st.session_state:
+        st.session_state[TICKER_KEY] = st.session_state.pop(PENDING_TICKER_KEY)
+
     col_input, col_button = st.columns([3, 1])
+    # `placeholder` e non `value`: il suggerimento si vede ma il campo è vuoto,
+    # altrimenti va cancellato a mano prima di ogni nuova ricerca. La `key`
+    # serve alla scheda di screening per precompilarlo.
     ticker = col_input.text_input(
-        "Ticker", value="ENSC", help="e.g. ENSC, SLS, MRNA", label_visibility="collapsed"
+        "Ticker",
+        key=TICKER_KEY,
+        placeholder="ENSC",
+        help="e.g. ENSC, SLS, MRNA",
+        label_visibility="collapsed",
     ).strip()
 
     job: Job | None = st.session_state.get("analysis_job")
@@ -380,10 +405,27 @@ def _screen_tab(language: str) -> None:
         return
 
     if isinstance(job.result, ScreenResult):
-        _show_screen(job.result)
+        _show_screen(job.result, language)
 
 
-def _show_screen(result: ScreenResult) -> None:
+def _avvia_da_candidata(ticker: str, language: str) -> bool:
+    """Manda un candidato dello screening in analisi completa.
+
+    Evita di ricopiare a mano il ticker nell'altra scheda: precompila il campo,
+    fa partire la pipeline e porta l'utente dove comparirà il report.
+    """
+    try:
+        settings = _settings_with_overrides(language)
+    except Exception as exc:  # noqa: BLE001 — la configurazione la corregge l'utente
+        st.error(f"Invalid configuration: {exc}")
+        return False
+    st.session_state[PENDING_TICKER_KEY] = ticker
+    st.session_state["analysis_job"] = _start_analysis(ticker, language, settings)
+    st.session_state[TAB_KEY] = TAB_ANALYZE
+    return True
+
+
+def _show_screen(result: ScreenResult, language: str) -> None:
     if not result.candidates:
         st.warning(
             "No stock meets the criteria. Try widening the catalyst window or the price threshold."
@@ -410,6 +452,9 @@ def _show_screen(result: ScreenResult) -> None:
         hide_index=True,
     )
 
+    in_corso: Job | None = st.session_state.get("analysis_job")
+    occupato = in_corso is not None and not in_corso.done
+
     for c in result.candidates:
         with st.expander(f"{c.ticker} — {c.company_name}"):
             if c.exceptional:
@@ -421,6 +466,19 @@ def _show_screen(result: ScreenResult) -> None:
                 st.markdown(f"- **Risk:** {risk_item}")
             st.caption(f"{c.main_drug} · {c.indication} · {c.catalyst.source}")
 
+            if st.button(
+                f"Analyze {c.ticker}",
+                key=f"analizza_{c.ticker}",
+                type="primary",
+                disabled=occupato,
+                help=(
+                    "An analysis is already running"
+                    if occupato
+                    else f"Run the full due diligence pipeline on {c.ticker}"
+                ),
+            ) and _avvia_da_candidata(c.ticker, language):
+                st.rerun()
+
 
 def main() -> None:
     if "pdf_dir" not in st.session_state:
@@ -429,7 +487,7 @@ def main() -> None:
         st.session_state["pdf_dir"] = tempfile.mkdtemp(prefix="biocatalyst-")
 
     language = _sidebar()
-    analyze, screen_tab = st.tabs(["Analyze a ticker", "Screen for opportunities"])
+    analyze, screen_tab = st.tabs([TAB_ANALYZE, TAB_SCREEN], key=TAB_KEY)
     with analyze:
         _analyse_tab(language)
     with screen_tab:

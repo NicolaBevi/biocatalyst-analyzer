@@ -284,3 +284,54 @@ def test_analisi_in_corso_non_mostra_il_report(monkeypatch: pytest.MonkeyPatch) 
     assert not at.exception
     assert not at.metric
     assert not at.download_button
+
+
+# --- Campo ticker e scorciatoia dallo screening ------------------------------
+
+
+def test_il_campo_ticker_e_vuoto_all_avvio(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un valore precompilato va cancellato a mano prima di ogni ricerca.
+
+    Il suggerimento resta come `placeholder`, che si vede ma non si deve
+    cancellare.
+    """
+    at = _app(monkeypatch)
+    at.run()
+
+    assert not at.exception
+    campo = at.text_input[0]
+    assert campo.value == ""
+    assert campo.placeholder == "ENSC"
+
+
+def test_dallo_screening_si_lancia_l_analisi_di_una_candidata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Il ticker passa alla pipeline senza doverlo ricopiare a mano."""
+    at = _app(monkeypatch)
+    at.session_state["screen_job"] = Job(label="screening", done=True, result=_screen_result())
+    at.run()
+
+    pulsanti = [b for b in at.button if b.label.startswith("Analyze ")]
+    assert pulsanti, "ogni candidata deve avere il suo pulsante"
+    assert pulsanti[0].label == "Analyze AAA"
+
+    pulsanti[0].click().run()
+
+    assert not at.exception
+    assert at.session_state["ticker_input"] == "AAA", "il campo va precompilato"
+    assert at.session_state["active_tab"] == "Analyze a ticker", "e la scheda va cambiata"
+    assert at.session_state["analysis_job"].label == "AAA"
+
+
+def test_il_pulsante_e_disattivato_se_un_analisi_gira_gia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Due pipeline insieme si contenderebbero la barra di avanzamento."""
+    at = _app(monkeypatch)
+    at.session_state["screen_job"] = Job(label="screening", done=True, result=_screen_result())
+    at.session_state["analysis_job"] = Job(label="SLS", done=False)
+    at.run()
+
+    pulsanti = [b for b in at.button if b.label.startswith("Analyze ")]
+    assert pulsanti and pulsanti[0].disabled
