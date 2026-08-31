@@ -21,7 +21,12 @@ from typing import Any
 
 import yfinance as yf
 
-from biocatalyst.data.base import DataNotFoundError, DataProviderError, DataUnavailableError
+from biocatalyst.data.base import (
+    DataNotFoundError,
+    DataProviderError,
+    DataUnavailableError,
+    translates_validation_errors,
+)
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
 from biocatalyst.models.raw_data import MarketData, PricePoint, SectorSentiment
@@ -84,6 +89,7 @@ class MarketDataProvider:
             return fetch()
         return self.cache.get_or_fetch(f"yf:info:{ticker.upper()}", self.price_ttl_seconds, fetch)
 
+    @translates_validation_errors
     def get_market_data(self, ticker: str) -> MarketData:
         info = self._fetch_info(ticker)
 
@@ -141,6 +147,7 @@ class MarketDataProvider:
             if r["close"] > 0
         ]
 
+    @translates_validation_errors
     def get_sector_sentiment(self, period_days: int = 30) -> list[SectorSentiment]:
         """Variazione percentuale di XBI e IBB sulla finestra richiesta.
 

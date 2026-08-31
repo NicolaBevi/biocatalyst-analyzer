@@ -10,6 +10,7 @@ from biocatalyst.data.base import (
     RateLimiter,
     collect_safely,
     parse_flexible_date,
+    translates_validation_errors,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.data.clinical_trials import ClinicalTrialsProvider
@@ -45,4 +46,5 @@ __all__ = [
     "build_data_providers",
     "collect_safely",
     "parse_flexible_date",
+    "translates_validation_errors",
 ]

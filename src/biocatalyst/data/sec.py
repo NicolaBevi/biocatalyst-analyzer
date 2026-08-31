@@ -25,6 +25,7 @@ from biocatalyst.data.base import (
     HTTPDataProvider,
     RateLimiter,
     parse_flexible_date,
+    translates_validation_errors,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
@@ -120,6 +121,7 @@ class SECProvider(HTTPDataProvider):
 
     # --- Dati finanziari trimestrali -----------------------------------------
 
+    @translates_validation_errors
     def get_quarterly_financials(self, ticker: str) -> list[QuarterlyFinancials]:
         cik = self.get_cik(ticker)
         facts = self._get_json(
@@ -161,6 +163,7 @@ class SECProvider(HTTPDataProvider):
 
     # --- Ricerca full-text nei filing ----------------------------------------
 
+    @translates_validation_errors
     def get_filing_signals(self, ticker: str) -> SECFilingSignals:
         """Cerca menzioni di ATM offering e warrant nei filing della società.
 

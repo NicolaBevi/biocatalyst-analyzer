@@ -12,9 +12,11 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import date
-from typing import Any, ClassVar, TypeVar
+from functools import wraps
+from typing import Any, ClassVar, ParamSpec, TypeVar
 
 import httpx
+from pydantic import ValidationError
 from tenacity import (
     RetryCallState,
     Retrying,
@@ -29,6 +31,8 @@ from biocatalyst.log import get_logger
 logger = get_logger(__name__)
 
 T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class DataProviderError(Exception):
@@ -53,6 +57,39 @@ class DataUnavailableError(DataProviderError):
 
 class DataParseError(DataProviderError):
     """La risposta è arrivata ma non ha la forma attesa. Non ritentabile."""
+
+
+def translates_validation_errors(func: Callable[P, R]) -> Callable[P, R]:
+    """Traduce un `ValidationError` di Pydantic in `DataParseError`.
+
+    Un valore fuori dai vincoli dei nostri modelli è un problema della fonte,
+    non un bug nostro, e va trattato come tutti gli altri guasti di una fonte:
+    `collect_safely` lo annota fra i dati mancanti e il report si genera lo
+    stesso, lo screen salta quel titolo e prosegue con gli altri.
+
+    Nasce da un caso reale: la SEC riporta le spese di R&S di Lineage Cell
+    Therapeutics col segno negativo, il modello aveva un `ge=0`, e l'intera
+    scansione dello screen si interrompeva su quell'unica società fra le 175
+    esaminate. Il vincolo sbagliato è stato tolto, ma il difetto vero era che
+    un dato inatteso potesse fermare tutto.
+
+    Non cattura nient'altro: un `TypeError` o un `KeyError` resta un bug
+    nostro e deve restare visibile, com'è già per `collect_safely`.
+    """
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return func(*args, **kwargs)
+        except ValidationError as exc:
+            errori = "; ".join(
+                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()[:3]
+            )
+            raise DataParseError(
+                f"la risposta di {func.__qualname__} non rispetta lo schema atteso: {errori}"
+            ) from exc
+
+    return wrapper
 
 
 RETRYABLE_DATA_ERRORS: tuple[type[DataProviderError], ...] = (

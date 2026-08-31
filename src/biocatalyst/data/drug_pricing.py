@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from biocatalyst.data.base import HTTPDataProvider, RateLimiter
+from biocatalyst.data.base import HTTPDataProvider, RateLimiter, translates_validation_errors
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
 from biocatalyst.models.raw_data import DrugSpending
@@ -56,6 +56,7 @@ class DrugPricingProvider(HTTPDataProvider):
         super().__init__(cache=cache, timeout=timeout, max_retries=max_retries)
         self.ttl_seconds = ttl_seconds
 
+    @translates_validation_errors
     def get_spending(self, drug_name: str) -> DrugSpending | None:
         """Spesa Medicare per un farmaco. None se non compare nei dati.
 

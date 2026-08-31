@@ -46,7 +46,14 @@ class QuarterlyFinancials(BaseModel):
     fiscal_period: Literal["Q1", "Q2", "Q3", "Q4", "FY"]
     period_end: date
     cash_and_equivalents_usd: float | None = Field(default=None, ge=0)
-    rd_expense_usd: float | None = Field(default=None, ge=0)
+    #: Senza vincolo di segno, e non per distrazione: **la SEC contiene valori
+    #: negativi**. Lineage Cell Therapeutics (CIK 876343) ha marcato col segno
+    #: meno tutte le spese di R&S dal 2009 al 2011 — è una convenzione di segno
+    #: del dichiarante, non un caso isolato: il Q2 2011 vale -3.285.286 nel
+    #: fatto XBRL originale. Esistono poi crediti d'imposta e rimborsi da
+    #: partner che compaiono legittimamente come costo negativo. Un `ge=0` qui
+    #: faceva fallire l'intera scansione dello screen su quell'unica società.
+    rd_expense_usd: float | None = None
     # Può essere negativo (perdita): tipico per il biotech clinical-stage.
     net_income_loss_usd: float | None = None
     form_type: Literal["10-Q", "10-K"]

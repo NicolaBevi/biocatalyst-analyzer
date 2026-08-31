@@ -8,13 +8,14 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from biocatalyst.data import (
     ClinicalTrialsProvider,
     DataAuthError,
     DataCache,
     DataNotFoundError,
+    DataParseError,
     DataProviderError,
     DataRateLimitError,
     DataUnavailableError,
@@ -27,8 +28,10 @@ from biocatalyst.data import (
     SECProvider,
     collect_safely,
     parse_flexible_date,
+    translates_validation_errors,
 )
 from biocatalyst.data import sec as sec_module
+from biocatalyst.models.raw_data import QuarterlyFinancials
 
 USER_AGENT = "BioCatalystAnalyzer test@example.com"
 
@@ -1073,3 +1076,94 @@ def test_vince_il_dato_piu_vecchio_fra_quelli_serviti(tmp_path: Path) -> None:
 
     assert dopo_il_nuovo is not None and cache.oldest_hit_at is not None
     assert cache.oldest_hit_at <= dopo_il_nuovo
+
+
+# --- Dati esterni fuori dai vincoli attesi -----------------------------------
+
+
+def test_la_spesa_di_ricerca_puo_essere_negativa() -> None:
+    """Non è un dato sporco: la SEC la riporta così.
+
+    Lineage Cell Therapeutics (CIK 876343) ha marcato col segno meno tutte le
+    spese di R&S dal 2009 al 2011 — convenzione di segno del dichiarante, non
+    un caso isolato. Il `ge=0` che c'era prima faceva fallire l'intera
+    scansione dello screen su quell'unica società.
+    """
+    q = QuarterlyFinancials(
+        fiscal_year=2011,
+        fiscal_period="Q2",
+        period_end=date(2011, 6, 30),
+        rd_expense_usd=-3_285_286,
+        form_type="10-Q",
+        filed_date=date(2011, 8, 9),
+    )
+    assert q.rd_expense_usd == -3_285_286
+
+
+def test_la_cassa_negativa_resta_rifiutata() -> None:
+    """Una giacenza di cassa negativa non esiste: lì il vincolo è giusto."""
+    with pytest.raises(ValidationError):
+        QuarterlyFinancials(
+            fiscal_year=2011,
+            fiscal_period="Q2",
+            period_end=date(2011, 6, 30),
+            cash_and_equivalents_usd=-1,
+            form_type="10-Q",
+            filed_date=date(2011, 8, 9),
+        )
+
+
+def test_un_dato_fuori_schema_diventa_un_errore_di_provider() -> None:
+    """Così `collect_safely` lo annota e lo screen salta il titolo.
+
+    Prima il ValidationError risaliva fino in cima e fermava tutto.
+    """
+
+    @translates_validation_errors
+    def finge_una_risposta_sbagliata() -> QuarterlyFinancials:
+        return QuarterlyFinancials(
+            fiscal_year=2011,
+            fiscal_period="Q2",
+            period_end=date(2011, 6, 30),
+            cash_and_equivalents_usd=-1,
+            form_type="10-Q",
+            filed_date=date(2011, 8, 9),
+        )
+
+    with pytest.raises(DataParseError) as errore:
+        finge_una_risposta_sbagliata()
+    # Il messaggio deve dire quale campo, altrimenti non è diagnosticabile.
+    assert "cash_and_equivalents_usd" in str(errore.value)
+
+
+def test_un_bug_di_programmazione_resta_visibile() -> None:
+    """Il traduttore non deve nascondere gli errori nostri."""
+
+    @translates_validation_errors
+    def ha_un_bug() -> None:
+        raise TypeError("questo è un bug, non un dato strano")
+
+    with pytest.raises(TypeError):
+        ha_un_bug()
+
+
+@respx.mock
+def test_ogni_metodo_pubblico_dei_provider_e_protetto() -> None:
+    """Un provider non protetto ripropone il guasto su un'altra fonte."""
+    from biocatalyst.data import clinical_trials, drug_pricing, fda, forex, market, news, sec
+
+    attesi = {
+        sec.SECProvider: ("get_quarterly_financials", "get_filing_signals"),
+        clinical_trials.ClinicalTrialsProvider: ("get_trials_by_sponsor", "get_schedule_history"),
+        fda.FDAProvider: ("get_approvals_by_sponsor",),
+        market.MarketDataProvider: ("get_market_data", "get_sector_sentiment"),
+        news.NewsProvider: ("get_company_news",),
+        forex.ForexProvider: ("get_eur_usd",),
+        drug_pricing.DrugPricingProvider: ("get_spending",),
+    }
+    for classe, metodi in attesi.items():
+        for nome in metodi:
+            funzione = getattr(classe, nome)
+            assert getattr(funzione, "__wrapped__", None) is not None, (
+                f"{classe.__name__}.{nome} non è protetto da translates_validation_errors"
+            )

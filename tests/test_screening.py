@@ -11,6 +11,7 @@ import pytest
 import respx
 
 from biocatalyst.analysis.screening import (
+    BALANCED,
     RISK_APPETITE_LABELS,
     RISK_APPETITES,
     attractiveness_score,
@@ -31,7 +32,7 @@ from biocatalyst.data.universe import (
 )
 from biocatalyst.models.analysis import Catalyst
 from biocatalyst.models.raw_data import ClinicalTrial, MarketData
-from biocatalyst.models.screening import ScreenCriteria
+from biocatalyst.models.screening import ScreenCandidate, ScreenCriteria
 from biocatalyst.screening import screen
 
 OGGI = date(2026, 8, 26)
@@ -630,3 +631,41 @@ def test_un_profilo_sconosciuto_si_mostra_com_e() -> None:
 def test_ogni_profilo_ha_l_etichetta_in_entrambe_le_lingue() -> None:
     for nome in RISK_APPETITES:
         assert set(RISK_APPETITE_LABELS[nome]) == {"en", "it"}, nome
+
+
+# --- Resilienza della scansione ---------------------------------------------
+
+
+def test_un_titolo_con_dati_anomali_non_ferma_la_scansione() -> None:
+    """Il caso reale che ha rotto lo screen dell'utente.
+
+    Una sola società fra le 175 esaminate aveva la spesa di R&S negativa nei
+    dati SEC: il ValidationError risaliva fino in cima e faceva fallire tutto.
+    Ora quel titolo viene saltato e la ricerca prosegue.
+    """
+    from unittest.mock import MagicMock
+
+    from biocatalyst.data import DataParseError
+    from biocatalyst.screening import _filtra
+
+    universo = {"BUONO": "Società Buona", "ROTTO": "Società Rotta", "ALTRO": "Terza"}
+    visti: list[str] = []
+
+    def valuta(ticker: str, *_: object, **__: object) -> ScreenCandidate | None:
+        visti.append(ticker)
+        if ticker == "ROTTO":
+            raise DataParseError("rd_expense_usd: Input should be greater than or equal to 0")
+        return None
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("biocatalyst.screening._valuta_titolo", valuta)
+        _filtra(
+            list(universo),
+            universo,
+            ScreenCriteria(),
+            MagicMock(),
+            lambda *_: None,
+            BALANCED,
+        )
+
+    assert visti == ["BUONO", "ROTTO", "ALTRO"], "la scansione deve arrivare in fondo"

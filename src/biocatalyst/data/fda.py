@@ -17,6 +17,7 @@ from biocatalyst.data.base import (
     HTTPDataProvider,
     RateLimiter,
     parse_flexible_date,
+    translates_validation_errors,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
@@ -42,6 +43,7 @@ class FDAProvider(HTTPDataProvider):
         super().__init__(cache=cache, timeout=timeout, max_retries=max_retries)
         self.ttl_seconds = ttl_seconds
 
+    @translates_validation_errors
     def get_approvals_by_sponsor(self, sponsor: str, limit: int = 20) -> list[FDAApproval]:
         """Approvazioni note per uno sponsor.
 

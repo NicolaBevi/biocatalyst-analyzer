@@ -25,6 +25,7 @@ from biocatalyst.data.base import (
     HTTPDataProvider,
     RateLimiter,
     parse_flexible_date,
+    translates_validation_errors,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
@@ -86,6 +87,7 @@ class ClinicalTrialsProvider(HTTPDataProvider):
         super().__init__(cache=cache, timeout=timeout, max_retries=max_retries)
         self.trial_ttl_seconds = trial_ttl_seconds
 
+    @translates_validation_errors
     def get_trials_by_sponsor(
         self, sponsor: str, page_size: int = 100, lead_sponsor_only: bool = True
     ) -> list[ClinicalTrial]:
@@ -113,6 +115,7 @@ class ClinicalTrialsProvider(HTTPDataProvider):
             trials.append(trial)
         return trials
 
+    @translates_validation_errors
     def get_schedule_history(self, nct_id: str) -> TrialScheduleHistory | None:
         """Storico delle date di completamento dichiarate per uno studio.
 

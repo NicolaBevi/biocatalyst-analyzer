@@ -17,6 +17,7 @@ from biocatalyst.data.base import (
     DataAuthError,
     HTTPDataProvider,
     RateLimiter,
+    translates_validation_errors,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
@@ -43,6 +44,7 @@ class NewsProvider(HTTPDataProvider):
         self._api_key = api_key
         self.ttl_seconds = ttl_seconds
 
+    @translates_validation_errors
     def get_company_news(self, ticker: str, days_back: int = 30) -> list[NewsItem]:
         if self._api_key is None:
             raise DataAuthError(

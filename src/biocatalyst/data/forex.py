@@ -17,6 +17,7 @@ from biocatalyst.data.base import (
     DataParseError,
     HTTPDataProvider,
     RateLimiter,
+    translates_validation_errors,
 )
 from biocatalyst.data.cache import DataCache
 from biocatalyst.log import get_logger
@@ -50,6 +51,7 @@ class ForexProvider(HTTPDataProvider):
         super().__init__(cache=cache, timeout=timeout, max_retries=max_retries)
         self.ttl_seconds = ttl_seconds
 
+    @translates_validation_errors
     def get_eur_usd(self, on_date: date | None = None) -> ExchangeRate:
         """Quanti dollari vale un euro. `on_date=None` chiede l'ultimo disponibile."""
         segment = on_date.isoformat() if on_date else "latest"

@@ -110,7 +110,7 @@ git clone <repo-url> && cd biocatalyst-analyzer
 uv sync
 
 cp .env.example .env      # then fill in .env, see below
-uv run pytest             # 459 tests, everything should be green
+uv run pytest             # 465 tests, everything should be green
 ```
 
 ### Minimum configuration
@@ -192,6 +192,8 @@ from a prediction.
 | **An overdue trial is not a finished trial** | Found while testing SLS (SELLAS): the Phase 3 REGAL trial had an *estimated* completion date 268 days in the past but a status of `ACTIVE_NOT_RECRUITING`. Filtering it out as "past" made the asset that actually explains the valuation disappear from the report. An **estimated** past date on an active trial means overdue — potentially the most imminent catalyst of all; an **actual** past date means it really happened |
 | **Event-driven endpoints detected from the outcome text** | A survival-endpoint trial closes when a set number of events has occurred, not on a date. A delay may mean events are accruing more slowly than modelled — a meaningful reading, not a certainty. The delay is also sized against the planned duration, and the model is asked to weigh it against the control arm's historical median survival rather than dismissing it as ambiguous |
 | **The non-root user is created before installing dependencies** | A `chown -R /app` after `uv sync` duplicates the whole virtual environment into a new layer: 547 MB wasted out of 1.71 GB. Creating the user first and using `COPY --chown` brought the image down to 995 MB |
+| **R&D expense carries no sign constraint: the SEC holds negative values** | Lineage Cell Therapeutics tagged every R&D expense from 2009 to 2011 with a minus sign — a filer's sign convention, verified against the original XBRL fact. Tax credits and partner reimbursements also show up legitimately as a negative cost. The constraint on cash stays: a negative cash balance does not exist |
+| **`ValidationError` is translated to `DataParseError` at every provider boundary** | The real defect was not the wrong constraint but that unexpected data from **one** company out of the 175 scanned could halt the entire screen. A value outside our constraints is the source's problem, not a bug of ours, and is handled like any other source failure: the screen skips that stock and carries on. A test checks that no public provider method is left unguarded |
 | **Prompts are written in the report's language, not always in Italian** | The SLS PDF came out half English, half Italian. The system prompt said "write in English" while the entire user message was in Italian — headings, data labels, closing instructions — and the model sometimes followed the message rather than the instruction. Answer caching then froze the wrong choice. The prompt scaffolding now lives in `agents/prompt_text.py` in both languages, with the same cross-language parity tests already used for `i18n.py` |
 | **Risk profiles carry stable English internal names** | `speculative` / `balanced` / `prudent` used to be Italian and showed up that way in the English screening menu. The internal name is what `--risk` accepts; a separate lookup provides the translated label |
 | **LLM answers are cached, which is what makes a report reproducible** | Regenerating the same report gave different numbers: two SLS analyses hours apart, same data, produced expected values of +19.1% and −27.8%. The cache key is a fingerprint of the whole prompt, and the prompt contains the collected data — so if the data changes the report is rebuilt, and if it does not, the answer is the same one. It costs nothing; it saves money |
@@ -242,7 +244,7 @@ uv run mypy src
 uv run pytest
 ```
 
-459 tests. The calculation layer (`analysis/`) is covered at **100%**: those
+465 tests. The calculation layer (`analysis/`) is covered at **100%**: those
 are the numbers people make decisions on, and an error there would not be
 flagged by any API. External calls are mocked with `respx`; no test touches
 the network.
