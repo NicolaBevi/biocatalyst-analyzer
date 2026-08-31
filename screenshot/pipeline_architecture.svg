@@ -1,0 +1,141 @@
+<svg viewBox="0 0 1100 1030" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#78909C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1100" height="1030" fill="#FAFBFC"/>
+
+  <!-- Title -->
+  <text x="550" y="36" text-anchor="middle" font-size="26" font-weight="700" fill="#1A237E">Investment Research Pipeline</text>
+  <text x="550" y="58" text-anchor="middle" font-size="13" fill="#607D8B">CLI + Streamlit UI  →  4-agent pipeline  →  deterministic financial math</text>
+
+  <!-- Inputs -->
+  <rect x="20" y="90" width="160" height="50" rx="10" fill="#E0F2F1" stroke="#00897B" stroke-width="2"/>
+  <text x="100" y="121" text-anchor="middle" font-size="14" font-weight="700" fill="#00695C">CLI (Typer)</text>
+  <rect x="20" y="155" width="160" height="50" rx="10" fill="#E0F2F1" stroke="#00897B" stroke-width="2"/>
+  <text x="100" y="186" text-anchor="middle" font-size="14" font-weight="700" fill="#00695C">UI (Streamlit)</text>
+  <line x1="180" y1="115" x2="205" y2="115" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="180" y1="180" x2="205" y2="180" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Pipeline banner -->
+  <rect x="210" y="90" width="870" height="115" rx="16" fill="#F0F6FF" stroke="#3B6FD6" stroke-width="2"/>
+  <text x="645" y="140" text-anchor="middle" font-size="20" font-weight="700" fill="#1A3E8C">PIPELINE</text>
+  <text x="645" y="163" text-anchor="middle" font-size="13" fill="#5C7CBF">4 agents in sequence · shared context</text>
+
+  <!-- Banner -> row of 3 agents -->
+  <line x1="345" y1="205" x2="345" y2="243" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="645" y1="205" x2="645" y2="243" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="945" y1="205" x2="945" y2="243" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Agent 1 -->
+  <g>
+    <rect x="210" y="245" width="270" height="150" rx="10" fill="#FFFFFF" stroke="#00897B" stroke-width="2.5"/>
+    <circle cx="237" cy="275" r="17" fill="#00897B"/>
+    <text x="237" y="280" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="228" y="316" font-size="15" font-weight="700" fill="#263238">DataCollector</text>
+    <text x="228" y="342" font-size="12.5" fill="#546E7A">No LLM — gathers facts</text>
+    <text x="228" y="362" font-size="12.5" fill="#546E7A">from every data source</text>
+  </g>
+
+  <!-- Agent 2 -->
+  <g>
+    <rect x="510" y="245" width="270" height="150" rx="10" fill="#FFFFFF" stroke="#3B6FD6" stroke-width="2.5"/>
+    <circle cx="537" cy="275" r="17" fill="#3B6FD6"/>
+    <text x="537" y="280" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="528" y="311" font-size="15" font-weight="700" fill="#263238">Clinical &amp; Financial</text>
+    <text x="528" y="331" font-size="15" font-weight="700" fill="#263238">Analyst</text>
+    <text x="528" y="357" font-size="12.5" fill="#546E7A">Metrics computed in Python;</text>
+    <text x="528" y="377" font-size="12.5" fill="#546E7A">LLM only for clinical judgment</text>
+  </g>
+
+  <!-- Agent 3 -->
+  <g>
+    <rect x="810" y="245" width="270" height="150" rx="10" fill="#FFFFFF" stroke="#8E24AA" stroke-width="2.5"/>
+    <circle cx="837" cy="275" r="17" fill="#8E24AA"/>
+    <text x="837" y="280" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="828" y="316" font-size="15" font-weight="700" fill="#263238">Market &amp; News</text>
+    <text x="828" y="342" font-size="12.5" fill="#546E7A">Verified facts kept separate</text>
+    <text x="828" y="362" font-size="12.5" fill="#546E7A">from market speculation</text>
+  </g>
+
+  <!-- Horizontal arrows 1->2->3 -->
+  <line x1="480" y1="320" x2="508" y2="320" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="780" y1="320" x2="808" y2="320" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Row of 3 -> Report Writer -->
+  <line x1="345" y1="395" x2="345" y2="433" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="645" y1="395" x2="645" y2="433" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="945" y1="395" x2="945" y2="433" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Agent 4: Report Writer (wide) -->
+  <rect x="210" y="435" width="870" height="130" rx="16" fill="#FFFFFF" stroke="#FB8C00" stroke-width="2.5"/>
+  <circle cx="238" cy="466" r="18" fill="#FB8C00"/>
+  <text x="238" y="471" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">4</text>
+  <text x="268" y="472" font-size="17" font-weight="700" fill="#263238">Report Writer</text>
+  <text x="230" y="505" font-size="13" fill="#546E7A">Sees the whole context — the LLM supplies probabilities</text>
+  <text x="230" y="527" font-size="13" fill="#546E7A">and target prices; the arithmetic is done by code (analysis/), never by the model</text>
+
+  <!-- Report Writer -> bottom row (straight where possible, small jog for Data Sources) -->
+  <path d="M225,565 L225,585 L195,585 L195,603" fill="none" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="575" y1="565" x2="575" y2="603" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="935" y1="565" x2="935" y2="603" stroke="#78909C" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Data Sources -->
+  <rect x="20" y="605" width="350" height="260" rx="12" fill="#E8F5E9" stroke="#43A047" stroke-width="2"/>
+  <text x="40" y="633" font-size="15" font-weight="700" fill="#2E7D32">DATA SOURCES</text>
+  <text x="180" y="633" font-size="12" font-style="italic" fill="#66BB6A">(data/)</text>
+  <g font-size="12" fill="#33691E">
+    <text x="40" y="661">• yfinance — price, float, short interest</text>
+    <text x="40" y="681">• SEC EDGAR — XBRL + full-text search</text>
+    <text x="40" y="701">• ClinicalTrials.gov v2</text>
+    <text x="40" y="721">• openFDA — Drugs@FDA</text>
+    <text x="40" y="741">• Finnhub — news</text>
+    <text x="40" y="761">• CMS drug spending</text>
+    <text x="40" y="781">• CT.gov record history</text>
+    <text x="40" y="801">• Frankfurter — EUR/USD</text>
+    <text x="40" y="821">• On-disk cache, per-key TTLs</text>
+  </g>
+
+  <!-- Deterministic Maths -->
+  <rect x="410" y="605" width="330" height="190" rx="12" fill="#FFF3E0" stroke="#FB8C00" stroke-width="2"/>
+  <text x="430" y="633" font-size="14" font-weight="700" fill="#E65100">DETERMINISTIC MATH</text>
+  <text x="430" y="651" font-size="11" font-style="italic" fill="#F57C00">(analysis/) · 100% test coverage</text>
+  <g font-size="12" fill="#4E342E">
+    <text x="430" y="675">• Burn rate &amp; cash runway</text>
+    <text x="430" y="695">• Squeeze &amp; dilution modeling</text>
+    <text x="430" y="715">• Expected value &amp; ROI</text>
+    <text x="430" y="735">• Catalyst date tracking</text>
+  </g>
+
+  <!-- Rendering -->
+  <rect x="790" y="605" width="290" height="150" rx="12" fill="#F3E5F5" stroke="#8E24AA" stroke-width="2"/>
+  <text x="810" y="633" font-size="15" font-weight="700" fill="#6A1B9A">RENDERING</text>
+  <text x="810" y="651" font-size="12" font-style="italic" fill="#AB47BC">(report/)</text>
+  <g font-size="12.5" fill="#4A148C">
+    <text x="810" y="675">• Markdown · JSON · HTML · PDF</text>
+    <text x="810" y="695">• Italian or English output</text>
+  </g>
+
+  <!-- LLM footer (no arrow — used across steps 2 & 4, described in text) -->
+  <rect x="20" y="905" width="1060" height="100" rx="14" fill="#1A237E"/>
+  <text x="40" y="933" font-size="16" font-weight="700" fill="#FFFFFF">LLM</text>
+  <text x="75" y="933" font-size="12" font-style="italic" fill="#9FA8DA">(llm/)</text>
+  <text x="40" y="955" font-size="12.5" fill="#C5CAE9">6 interchangeable providers · used for the clinical-judgment (2) and report-writing (4) steps — rest is pure Python</text>
+
+  <g font-size="11.5" font-weight="700" fill="#FFFFFF">
+    <rect x="40" y="967" width="150" height="26" rx="13" fill="#3949AB" stroke="#5C6BC0"/>
+    <text x="115" y="984" text-anchor="middle">Anthropic</text>
+    <rect x="214" y="967" width="150" height="26" rx="13" fill="#3949AB" stroke="#5C6BC0"/>
+    <text x="289" y="984" text-anchor="middle">OpenAI</text>
+    <rect x="388" y="967" width="150" height="26" rx="13" fill="#3949AB" stroke="#5C6BC0"/>
+    <text x="463" y="984" text-anchor="middle">DeepSeek</text>
+    <rect x="562" y="967" width="150" height="26" rx="13" fill="#3949AB" stroke="#5C6BC0"/>
+    <text x="637" y="984" text-anchor="middle">Groq</text>
+    <rect x="736" y="967" width="150" height="26" rx="13" fill="#3949AB" stroke="#5C6BC0"/>
+    <text x="811" y="984" text-anchor="middle">Gemini</text>
+    <rect x="910" y="967" width="150" height="26" rx="13" fill="#3949AB" stroke="#5C6BC0"/>
+    <text x="985" y="984" text-anchor="middle">Ollama</text>
+  </g>
+</svg>

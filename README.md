@@ -51,51 +51,15 @@ localized too, so an English report contains no Italian leftovers.
 
 ## Architecture
 
-```
-                    ┌──────────────────────────────────────────┐
-   CLI (Typer) ────▶│              PIPELINE                    │
-   UI (Streamlit) ─▶│  4 agents in sequence, shared context    │
-                    └──────────────────────────────────────────┘
-                                      │
-   ┌──────────────────────────────────┼──────────────────────────────────┐
-   ▼                                  ▼                                  ▼
-┌─────────────────┐     ┌──────────────────────┐      ┌─────────────────────┐
-│ 1 DataCollector │     │ 2 ClinicalFinancial  │      │ 3 MarketNews        │
-│                 │     │   Analyst            │      │                     │
-│ no LLM:         │────▶│ metrics in Python;   │─────▶│ verified facts kept │
-│ gathers facts   │     │ LLM only for the     │      │ separate from       │
-│                 │     │ clinical judgment    │      │ market speculation  │
-└─────────────────┘     └──────────────────────┘      └─────────────────────┘
-   │                                  │                                  │
-   │  ┌───────────────────────────────┴──────────────────────────────────┘
-   │  ▼
-   │ ┌──────────────────────────────────────────────────────────────────┐
-   │ │ 4 ReportWriter — the only agent that sees the whole context      │
-   │ │   the LLM supplies probabilities and target prices; the          │
-   │ │   arithmetic is done by code (analysis/), never by the model     │
-   │ └──────────────────────────────────────────────────────────────────┘
-   │                                   │
-   ▼                                   ▼
-┌──────────────────────────┐   ┌───────────────────────────────────────┐
-│ DATA SOURCES (data/)     │   │ RENDERING (report/)                   │
-│  · yfinance   price,     │   │  Markdown · JSON · HTML · PDF         │
-│    float, short interest │   │  Italian or English                   │
-│  · SEC EDGAR  XBRL +     │   └───────────────────────────────────────┘
-│    full-text search      │
-│  · ClinicalTrials.gov v2 │   ┌───────────────────────────────────────┐
-│  · CT.gov record history │   │ DETERMINISTIC MATH (analysis/)        │
-│  · openFDA    Drugs@FDA  │   │  burn rate · cash runway · squeeze    │
-│  · Finnhub    news       │   │  dilution · EV/ROI · catalysts        │
-│  · CMS drug spending     │   │  100% test coverage                   │
-│  · Frankfurter EUR/USD   │   └───────────────────────────────────────┘
-│                          │
-│  on-disk cache, per-key  │
-│  TTLs                    │
-└──────────────────────────┘
+![Pipeline architecture](screenshot/pipeline_architecture.svg)
 
-LLM (llm/): 6 interchangeable providers — Anthropic, OpenAI, DeepSeek, Groq,
-Gemini, Ollama. Switch models from the .env file alone, per agent if you want.
-```
+Four agents run in sequence over a shared context. The split is deliberate:
+everything computable is computed in Python, and the language model is asked
+only for clinical judgment and for writing the report — never for arithmetic.
+
+Any of the six LLM providers can be swapped from the `.env` file alone, and a
+different model can be set per agent, so you spend where reasoning actually
+matters.
 
 ---
 
