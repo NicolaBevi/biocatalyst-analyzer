@@ -257,10 +257,10 @@ DATA NOT RETRIEVED
 Produce the report.
 
 In the pipeline overview cite EVERY relevant asset listed above, not only the
-one analysed in depth: the reader must understand what makes up the company's
+one analyzed in depth: the reader must understand what makes up the company's
 value. If a trial is marked OVERDUE explain what that means, and if it is also
 EVENT-DRIVEN explicitly weigh both possible readings (events accruing more
-slowly than expected, or operational and enrolment problems) without
+slowly than expected, or operational and enrollment problems) without
 presenting either as certain.
 
 Remember: probabilities summing to 1.0, target prices in dollars consistent
@@ -342,7 +342,7 @@ Lead trial (the one with the nearest catalyst):
 - Title: {title}
 - Phase: {phase}
 - Status: {status}
-- Enrolment: {enrollment} ({enrollment_type})
+- Enrollment: {enrollment} ({enrollment_type})
 - Primary endpoint: {endpoint}
 - Expected completion: {completion}
 - Condition: {condition}
@@ -375,7 +375,7 @@ Biotech sector performance:
 News on the stock over the last {days} days:
 {headlines}
 
-Summarise the market context. In the macro notes consider the climate for
+Summarize the market context. In the macro notes consider the climate for
 small-cap biotech (interest rates, FDA posture, M&A activity in the sector).
 Answer in English.""",
     },

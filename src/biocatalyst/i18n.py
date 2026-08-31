@@ -155,7 +155,7 @@ MESSAGES: dict[str, dict[ReportLanguage, str]] = {
         "en": (
             ". Event-driven endpoint: the duration depends on how many events have "
             "occurred rather than on the calendar, so a delay may indicate that events "
-            "are accruing more slowly than modelled"
+            "are accruing more slowly than modeled"
         ),
         "it": (
             ". Endpoint a eventi: la durata dipende dal numero di eventi verificatisi, "

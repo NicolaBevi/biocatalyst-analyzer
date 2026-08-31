@@ -6,9 +6,9 @@ clinical and regulatory catalysts**: a trial readout, an FDA decision, the
 point where a company runs out of cash.
 
 It comes from a concrete need. Small-cap biotechs move on dated, verifiable
-events, but the data you need to judge them is scattered across six different
+events, but the data you need to judge them is scattered across seven different
 sources, each with its own quirks. This tool collects them, computes in Python
-whatever is computable, and uses a language model only where judgement is
+whatever is computable, and uses a language model only where judgment is
 genuinely required.
 
 > **This is not financial advice.** See the [disclaimer](#disclaimer).
@@ -45,7 +45,7 @@ catalyst, three probability-weighted scenarios, acquisition likelihood, a
 trading strategy, and an explicit list of the data it could **not** retrieve.
 Exportable to Markdown, JSON, HTML and PDF, in **English or Italian**. Every
 string the code itself produces — source labels, metric notes, warnings — is
-localised too, so an English report contains no Italian leftovers.
+localized too, so an English report contains no Italian leftovers.
 
 ---
 
@@ -64,7 +64,7 @@ localised too, so an English report contains no Italian leftovers.
 │                 │     │   Analyst            │      │                     │
 │ no LLM:         │────▶│ metrics in Python;   │─────▶│ verified facts kept │
 │ gathers facts   │     │ LLM only for the     │      │ separate from       │
-│                 │     │ clinical judgement   │      │ market speculation  │
+│                 │     │ clinical judgment    │      │ market speculation  │
 └─────────────────┘     └──────────────────────┘      └─────────────────────┘
    │                                  │                                  │
    │  ┌───────────────────────────────┴──────────────────────────────────┘
@@ -83,13 +83,13 @@ localised too, so an English report contains no Italian leftovers.
 │  · SEC EDGAR  XBRL +     │   └───────────────────────────────────────┘
 │    full-text search      │
 │  · ClinicalTrials.gov v2 │   ┌───────────────────────────────────────┐
-│  · openFDA    Drugs@FDA  │   │ DETERMINISTIC MATHS (analysis/)       │
-│  · Finnhub    news       │   │  burn rate · cash runway · squeeze    │
-│  · CMS drug spending     │
-│  · CT.gov record history │
-│  · Frankfurter EUR/USD   │   │  dilution · EV/ROI · catalysts        │
-│                          │   │  100% test coverage                   │
-│  on-disk cache, per-key  │   └───────────────────────────────────────┘
+│  · CT.gov record history │   │ DETERMINISTIC MATH (analysis/)        │
+│  · openFDA    Drugs@FDA  │   │  burn rate · cash runway · squeeze    │
+│  · Finnhub    news       │   │  dilution · EV/ROI · catalysts        │
+│  · CMS drug spending     │   │  100% test coverage                   │
+│  · Frankfurter EUR/USD   │   └───────────────────────────────────────┘
+│                          │
+│  on-disk cache, per-key  │
 │  TTLs                    │
 └──────────────────────────┘
 
@@ -108,7 +108,7 @@ git clone <repo-url> && cd biocatalyst-analyzer
 uv sync
 
 cp .env.example .env      # then fill in .env, see below
-uv run pytest             # 465 tests, everything should be green
+uv run pytest             # 469 tests, everything should be green
 ```
 
 ### Minimum configuration
@@ -131,8 +131,8 @@ everything else still works and the report declares the source as unavailable.
 **Different models for different agents**, so you spend where it matters:
 
 ```bash
-AGENT_ANALYST_MODEL=deepseek-v4-pro     # clinical judgement: needs reasoning
-AGENT_NEWS_MODEL=deepseek-v4-flash      # summarising headlines: fast is enough
+AGENT_ANALYST_MODEL=deepseek-v4-pro     # clinical judgment: needs reasoning
+AGENT_NEWS_MODEL=deepseek-v4-flash      # summarizing headlines: fast is enough
 AGENT_WRITER_MODEL=deepseek-v4-pro      # the final report
 ```
 
@@ -154,7 +154,7 @@ uv run biocatalyst compare ENSC MRNA VRTX
 
 # Screening for new opportunities
 uv run biocatalyst screen --max-price 10 --catalyst-window 6
-uv run biocatalyst screen --risk speculative   # doesn't penalise likely dilution
+uv run biocatalyst screen --risk speculative   # doesn't penalize likely dilution
 ```
 
 ### Web interface
@@ -188,28 +188,28 @@ from a prediction.
 | **The model never does arithmetic** | `ReportDraft` — the schema the LLM fills in — contains no computed field at all: no percentage changes, no expected value, no ROI. The rule isn't left to a prompt instruction, it's made structurally impossible to violate. A test asserts this against the schema |
 | **SEC: XBRL APIs, not filing parsing** | `companyfacts` already returns cash, R&D and net income as dated numbers. But facts must be filtered by **duration** (`end - start`), not by the `fp` field: under the same `fp="Q2"` both the quarter and the six-month cumulative coexist, and using `fp` doubles the figures |
 | **An overdue trial is not a finished trial** | Found while testing SLS (SELLAS): the Phase 3 REGAL trial had an *estimated* completion date 268 days in the past but a status of `ACTIVE_NOT_RECRUITING`. Filtering it out as "past" made the asset that actually explains the valuation disappear from the report. An **estimated** past date on an active trial means overdue — potentially the most imminent catalyst of all; an **actual** past date means it really happened |
-| **Event-driven endpoints detected from the outcome text** | A survival-endpoint trial closes when a set number of events has occurred, not on a date. A delay may mean events are accruing more slowly than modelled — a meaningful reading, not a certainty. The delay is also sized against the planned duration, and the model is asked to weigh it against the control arm's historical median survival rather than dismissing it as ambiguous |
+| **Event-driven endpoints detected from the outcome text** | A survival-endpoint trial closes when a set number of events has occurred, not on a date. A delay may mean events are accruing more slowly than modeled — a meaningful reading, not a certainty. The delay is also sized against the planned duration, and the model is asked to weigh it against the control arm's historical median survival rather than dismissing it as ambiguous |
 | **The non-root user is created before installing dependencies** | A `chown -R /app` after `uv sync` duplicates the whole virtual environment into a new layer: 547 MB wasted out of 1.71 GB. Creating the user first and using `COPY --chown` brought the image down to 995 MB |
 | **R&D expense carries no sign constraint: the SEC holds negative values** | Lineage Cell Therapeutics tagged every R&D expense from 2009 to 2011 with a minus sign — a filer's sign convention, verified against the original XBRL fact. Tax credits and partner reimbursements also show up legitimately as a negative cost. The constraint on cash stays: a negative cash balance does not exist |
 | **`ValidationError` is translated to `DataParseError` at every provider boundary** | The real defect was not the wrong constraint but that unexpected data from **one** company out of the 175 scanned could halt the entire screen. A value outside our constraints is the source's problem, not a bug of ours, and is handled like any other source failure: the screen skips that stock and carries on. A test checks that no public provider method is left unguarded |
 | **Prompts are written in the report's language, not always in Italian** | The SLS PDF came out half English, half Italian. The system prompt said "write in English" while the entire user message was in Italian — headings, data labels, closing instructions — and the model sometimes followed the message rather than the instruction. Answer caching then froze the wrong choice. The prompt scaffolding now lives in `agents/prompt_text.py` in both languages, with the same cross-language parity tests already used for `i18n.py` |
 | **Risk profiles carry stable English internal names** | `speculative` / `balanced` / `prudent` used to be Italian and showed up that way in the English screening menu. The internal name is what `--risk` accepts; a separate lookup provides the translated label |
 | **LLM answers are cached, which is what makes a report reproducible** | Regenerating the same report gave different numbers: two SLS analyses hours apart, same data, produced expected values of +19.1% and −27.8%. The cache key is a fingerprint of the whole prompt, and the prompt contains the collected data — so if the data changes the report is rebuilt, and if it does not, the answer is the same one. It costs nothing; it saves money |
-| **`temperature=0` and `seed` are not enough** (measured, not assumed) | The obvious fix does not work. The DeepSeek API accepts both parameters but does not honour them on its reasoning models: across identical calls the bull probability came back 0.70 / 0.15 / 0.55 — as dispersed as the default. The plumbing is implemented anyway, since it is correct and other providers do honour it, but the real remedy is the cache |
+| **`temperature=0` and `seed` are not enough** (measured, not assumed) | The obvious fix does not work. The DeepSeek API accepts both parameters but does not honor them on its reasoning models: across identical calls the bull probability came back 0.70 / 0.15 / 0.55 — as dispersed as the default. The plumbing is implemented anyway, since it is correct and other providers do honor it, but the real remedy is the cache |
 | **`generated_at` reports how old the data actually is** | The field always said `now()`, so a report built on yesterday's filings presented itself as freshly gathered. With answer caching that became the norm rather than the exception, so the cache now remembers when the oldest served value was written and the collector uses that |
 | **A trial's postponement history, from the CT.gov record archive** | "268 days overdue" does not say whether it is the first time or the fourth — two different stories the model had no way to tell apart. The registry keeps every revision of a record. Verified on REGAL: the date moved from 2021-12 to 2025-12 across **three postponements, 48 months**. The endpoint is internal rather than part of the documented v2 API, so any error there means "history unavailable" and never blocks the analysis |
 | **Historical phase-success rates as an anchor for the scenario probabilities** | Those probabilities are the least grounded number in the report and the one expected value is computed from, yet the model picked them with no reference at all. The historical phase-transition rate now sits beside them. **This is the one figure in the project that does not come from a queryable source**: it is literature (BIO/Informa/QLS, data through 2020) transcribed by hand, and the report always cites source and year |
 | **A list of unverified figures at the end of the report** | The prose mixes measured numbers with numbers the model remembers ("historical median OS is 6–12 months"), printed identically and so apparently equally solid. Figures with no match in the collected data are now listed separately. Measured on SLS: **a single flag**, a genuine one. It is a net rather than a guarantee — among 150+ known values a figure can coincide by chance — and the report says so |
-| **The comparator's price is verified against CMS data, not left to the model** | The TAM estimate was the only part of the report resting entirely on the model's memory. CMS publishes actual Medicare spending per drug, including average annual spend per beneficiary. The model now picks *which* drug is the right comparator — a domain judgement — and the system verifies its price. On SLS the model quoted a $240–300k list price for Onureg; the CMS figure is **$129,238**, about half. If the drug is absent from Medicare data the field stays null and the report says so |
+| **The comparator's price is verified against CMS data, not left to the model** | The TAM estimate was the only part of the report resting entirely on the model's memory. CMS publishes actual Medicare spending per drug, including average annual spend per beneficiary. The model now picks *which* drug is the right comparator — a domain judgment — and the system verifies its price. On SLS the model quoted a $240–300k list price for Onureg; the CMS figure is **$129,238**, about half. If the drug is absent from Medicare data the field stays null and the report says so |
 | **A chain of alternative XBRL concepts** | Ensysce uses `NetIncomeLoss` through 2021 and `ProfitLoss` from 2022. With a single concept, net income was missing on 34 periods out of 34, making burn rate impossible to compute |
 | **Burn rate from net income, not from the cash decline** | Between Q3 and Q4 2025 Ensysce's cash *rises* because of a capital raise: measuring the cash decline would report "negative burn" while the company was in fact burning cash |
 | **Risk scores are `float \| None`, never 0** | A zero reads as "no risk" rather than "not computable", and for micro-caps short interest data is often missing entirely |
-| **Thin cash is flagged, not penalised** | Dilution is not failure: a heavily discounted stock that raises capital and then posts positive data can still multiply. Penalising it in the ranking discarded exactly the asymmetric opportunities. There is a genuinely fatal tail though — cash gone with no access to capital means the trial stops — and that is stated separately |
+| **Thin cash is flagged, not penalized** | Dilution is not failure: a heavily discounted stock that raises capital and then posts positive data can still multiply. Penalizing it in the ranking discarded exactly the asymmetric opportunities. There is a genuinely fatal tail though — cash gone with no access to capital means the trial stops — and that is stated separately |
 | **Streaming on by default** | Streamlit Community Cloud cuts outbound HTTP responses at ~60s and the writer agent takes 146. A thread doesn't help: it doesn't make the response any shorter. Streaming does — measured on a reasoning model, the longest gap between chunks was 0.7s |
 | **Finnhub, not NewsAPI** | NewsAPI's free tier forbids use outside a development environment, even non-commercially: incompatible with a deployed app |
 | **Screening universe from SEC company data** | Finviz has no stable free API. `browse-edgar` by SIC code yields 673 biotech companies, 175 of them listed on NASDAQ/NYSE |
 | **Staged screening, LLM only on the finalists** | Running the full analysis on 175 companies would mean hundreds of paid calls to find five. A single call produces the rationale for every finalist at once |
-| **Retry centralised, SDK retries disabled** | Leaving both on multiplies attempts: 3 × 2 = 6 paid calls instead of 3 |
+| **Retry centralized, SDK retries disabled** | Leaving both on multiplies attempts: 3 × 2 = 6 paid calls instead of 3 |
 
 ---
 
@@ -230,7 +230,21 @@ tool itself:
 - **Catalyst dates are often sponsor estimates** and slip; the report says so
   next to every date.
 - **yfinance states "personal use only"** in its terms.
-- EUR/USD currency risk is not modelled: the maths is done in dollars.
+- EUR/USD currency risk is not modeled: the math is done in dollars.
+- **The historical success rates are the one figure not taken from a live
+  source.** No free, queryable source publishes phase-transition rates, so
+  `analysis/base_rates.py` holds literature values transcribed by hand
+  (BIO/Informa/QLS, data through 2020). The report always prints the source and
+  year next to the number so a reader can check it against the publication.
+- **The trial revision history uses an internal CT.gov endpoint** (`/api/int/`),
+  not the documented v2 API. It works today, verified on several trials, but it
+  can change without notice: any error there means "history unavailable" and
+  never blocks the analysis.
+- **Caching makes a report reproducible, not the model's judgment stable.** Two
+  runs on the same data give the same report. Two runs that re-query the model
+  do not: measured on SLS at a near-flat price, three fresh runs returned
+  SELL / HOLD / HOLD with expected values between −32.8% and −5.0%. The spread
+  comes from the bull-case target price, not from the probabilities.
 
 ---
 
@@ -242,7 +256,7 @@ uv run mypy src
 uv run pytest
 ```
 
-465 tests. The calculation layer (`analysis/`) is covered at **100%**: those
+469 tests. The calculation layer (`analysis/`) is covered at **100%**: those
 are the numbers people make decisions on, and an error there would not be
 flagged by any API. External calls are mocked with `respx`; no test touches
 the network.

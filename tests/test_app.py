@@ -195,7 +195,7 @@ def test_l_interfaccia_e_in_inglese(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not at.exception
     assert any("Enter a ticker" in i.value for i in at.info)
     etichette = [b.label for b in at.button]
-    assert "Analyse" in etichette
+    assert "Analyze" in etichette
     assert at.sidebar.radio[0].label == "Report language"
 
 

@@ -98,9 +98,10 @@ def _matches_known(value: float, known: set[float]) -> bool:
     """
     for candidato in (value, value / 100.0, value * 100.0):
         for noto in known:
+            # Uno zero fra i valori noti si salta: non è divisibile, e non può
+            # comunque corrispondere a niente, perché `MIN_MAGNITUDE` ha già
+            # scartato le cifre minuscole prima di arrivare qui.
             if noto == 0:
-                if candidato == 0:
-                    return True
                 continue
             if abs(candidato - noto) / abs(noto) <= RELATIVE_TOLERANCE:
                 return True

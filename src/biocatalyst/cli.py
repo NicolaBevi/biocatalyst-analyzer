@@ -148,7 +148,7 @@ def version() -> None:
 
 @app.command()
 def analyze(
-    ticker: Annotated[str, typer.Argument(help="Ticker to analyse, e.g. ENSC")],
+    ticker: Annotated[str, typer.Argument(help="Ticker to analyze, e.g. ENSC")],
     output: Annotated[
         Path | None,
         typer.Option(
@@ -193,7 +193,7 @@ def analyze(
     providers = build_data_providers(settings, cache_enabled=not no_cache)
     try:
         console.print(
-            f"\n[bold]Analysing {ticker.upper()}[/bold] (language: {settings.report_language})"
+            f"\n[bold]Analyzing {ticker.upper()}[/bold] (language: {settings.report_language})"
         )
         report = _esegui(ticker, settings, providers, mostra_avanzamento=True)
 
@@ -267,13 +267,13 @@ def compare(
         providers.close()
 
     if not riusciti:
-        error_console.print("\n[red]No ticker could be analysed.[/red]")
+        error_console.print("\n[red]No ticker could be analyzed.[/red]")
         raise typer.Exit(code=1)
 
     console.print()
     console.print(_tabella_confronto(riusciti))
     if falliti:
-        console.print(f"\n[yellow]Not analysed: {', '.join(t for t, _ in falliti)}[/yellow]")
+        console.print(f"\n[yellow]Not analyzed: {', '.join(t for t, _ in falliti)}[/yellow]")
 
 
 def _tabella_confronto(reports: list[Report]) -> Table:
@@ -309,7 +309,7 @@ def screen(
         float, typer.Option("--max-price", help="Maximum share price in dollars")
     ] = 10.0,
     max_market_cap: Annotated[
-        float, typer.Option("--max-market-cap", help="Maximum market capitalisation in dollars")
+        float, typer.Option("--max-market-cap", help="Maximum market capitalization in dollars")
     ] = 500_000_000,
     catalyst_window: Annotated[
         int, typer.Option("--catalyst-window", help="Catalyst window in months")
@@ -380,7 +380,7 @@ def screen(
             if fase == "titoli":
                 stato.update(f"[dim]examining stocks {fatto}/{totale}…[/dim]")
             elif fase == "motivazioni":
-                stato.update("[dim]analysing the finalists…[/dim]")
+                stato.update("[dim]analyzing the finalists…[/dim]")
 
         try:
             risultato = run_screen(

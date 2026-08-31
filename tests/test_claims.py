@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from pydantic import BaseModel
+
 from biocatalyst.analysis.claims import (
     collect_known_values,
     unverified_figures,
@@ -98,3 +100,46 @@ def test_le_sezioni_narrative_non_sono_una_fonte() -> None:
     noti = collect_known_values(finto)
     assert 12.5 in noti
     assert unverified_figures("il valore è 999999", noti) != []
+
+
+def test_uno_zero_fra_i_valori_noti_non_rompe_il_confronto() -> None:
+    """Uno zero non è divisibile: senza la guardia il confronto esploderebbe.
+
+    Capita davvero: un burn rate o uno short interest a zero finiscono fra i
+    valori noti come tutti gli altri.
+    """
+    trovate = unverified_figures("la sopravvivenza mediana è di 9 mesi", {0.0, 127.0})
+    assert [f.value for f in trovate] == [9.0], "lo zero non deve coprire nulla"
+
+
+def test_l_elenco_ha_un_tetto() -> None:
+    """Un elenco lunghissimo non aiuterebbe nessuno a controllare le cifre."""
+    testo = " ".join(f"il valore {n}" for n in range(100, 130))
+    assert len(unverified_figures(testo, set(), max_results=4)) == 4
+
+
+def test_la_raccolta_non_scende_all_infinito() -> None:
+    """Una struttura che si contiene fermerebbe la raccolta senza la guardia."""
+    annidato: dict[str, object] = {"valore": 7.0}
+    corrente = annidato
+    for _ in range(20):
+        successivo: dict[str, object] = {"valore": 7.0}
+        corrente["dentro"] = successivo
+        corrente = successivo
+
+    noti = collect_known_values(annidato)
+    assert 7.0 in noti, "i livelli raggiungibili vanno comunque raccolti"
+
+
+def test_una_proprieta_che_solleva_non_ferma_la_raccolta() -> None:
+    """Meglio perdere un valore che perdere l'intero elenco."""
+
+    class ConProprietaRotta(BaseModel):
+        prezzo: float
+
+        @property
+        def rotta(self) -> float:
+            raise RuntimeError("questa proprietà non funziona")
+
+    noti = collect_known_values(ConProprietaRotta(prezzo=13.85))
+    assert 13.85 in noti

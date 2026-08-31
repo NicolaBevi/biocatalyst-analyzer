@@ -200,7 +200,7 @@ def _live_progress(job: Job) -> None:
         st.rerun(scope="app")
 
 
-# --- Analyse tab ------------------------------------------------------------------
+# --- Analyze tab ------------------------------------------------------------------
 
 
 def _analyse_tab(language: str) -> None:
@@ -213,7 +213,7 @@ def _analyse_tab(language: str) -> None:
     running = job is not None and not job.done
 
     if col_button.button(
-        "Analyse", type="primary", disabled=running or not ticker, width="stretch"
+        "Analyze", type="primary", disabled=running or not ticker, width="stretch"
     ):
         try:
             settings = _settings_with_overrides(language)
@@ -244,10 +244,10 @@ def _analyse_tab(language: str) -> None:
 
 
 def _show_report(report: Report) -> None:
-    colour = {"BUY": "green", "HOLD": "orange", "SELL": "red"}[report.rating]
+    colore = {"BUY": "green", "HOLD": "orange", "SELL": "red"}[report.rating]
     st.markdown(
         f"## {report.company_name or report.ticker} "
-        f"(:{colour}[{report.rating}]) — ${report.current_price:,.4f}"
+        f"(:{colore}[{report.rating}]) — ${report.current_price:,.4f}"
     )
 
     for warning in report.source_quality.warnings:
@@ -429,8 +429,8 @@ def main() -> None:
         st.session_state["pdf_dir"] = tempfile.mkdtemp(prefix="biocatalyst-")
 
     language = _sidebar()
-    analyse, screen_tab = st.tabs(["Analyse a ticker", "Screen for opportunities"])
-    with analyse:
+    analyze, screen_tab = st.tabs(["Analyze a ticker", "Screen for opportunities"])
+    with analyze:
         _analyse_tab(language)
     with screen_tab:
         _screen_tab(language)

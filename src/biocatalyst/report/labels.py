@@ -102,7 +102,7 @@ LABELS: dict[ReportLanguage, dict[str, str]] = {
         "sec_acquisition": "Acquisition likelihood",
         "sec_strategy": "Trading strategy",
         "sec_sources": "Sources and data quality",
-        "market_cap": "Market capitalisation",
+        "market_cap": "Market capitalization",
         "float_shares": "Float",
         "short_float": "Short interest as % of float",
         "days_to_cover": "Days to cover",
@@ -289,7 +289,7 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
         ),
         "dilution_score": (
             "A 0-100 indicator of the risk that shareholders get diluted, derived from cash "
-            "runway (60% weight), the presence of an ATM programme in the filings (25%) and the "
+            "runway (60% weight), the presence of an ATM program in the filings (25%) and the "
             "presence of warrants (15%)."
         ),
         "days_to_cover": (
@@ -311,7 +311,7 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
             "target prices, multiplied by the number of shares purchasable. The arithmetic is "
             "performed by the system, not by the language model. It is denominated in US "
             "dollars, the currency the stock trades in; the EUR/USD rate is shown for reference "
-            "only and currency risk is not modelled."
+            "only and currency risk is not modeled."
         ),
         "catalysts": (
             "Expected price-moving events, extracted from registered clinical trials and sorted "
@@ -350,7 +350,7 @@ EXPLANATIONS: dict[ReportLanguage, dict[str, str]] = {
         "base_rate": (
             "The share of trials that historically cleared this phase once they reached "
             "this stage. It gives a yardstick for the scenario probabilities above, which "
-            "the language model sets by judgement: if it assigns the bull case a "
+            "the language model sets by judgment: if it assigns the bull case a "
             "probability far from this figure, the gap should be justified by the scenario "
             "conditions. Note: this is **not the probability that the stock goes up**, and "
             "it is an industry average that knows nothing about this particular trial. "

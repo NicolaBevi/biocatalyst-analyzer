@@ -294,7 +294,7 @@ def test_compare_prosegue_se_un_ticker_fallisce(monkeypatch: pytest.MonkeyPatch)
 
     assert result.exit_code == 0
     assert "ENSC" in result.output
-    assert "Not analysed: ROTTO" in result.output
+    assert "Not analyzed: ROTTO" in result.output
 
 
 def test_compare_fallisce_se_nessun_ticker_riesce(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -306,7 +306,7 @@ def test_compare_fallisce_se_nessun_ticker_riesce(monkeypatch: pytest.MonkeyPatc
     result = runner.invoke(app, ["compare", "AAA", "BBB", "--no-save"])
 
     assert result.exit_code == 1
-    assert "No ticker could be analysed" in result.output
+    assert "No ticker could be analyzed" in result.output
 
 
 # --- screen e version --------------------------------------------------------------
