@@ -17,30 +17,28 @@ genuinely required.
 
 ## What it produces
 
-```
-📊 Ensysce Biosciences, Inc. ($ENSC)
+Pages from the PDF of a real report — SELLAS Life Sciences (`$SLS`),
+generated in English.
 
-Analysis generated on: 2026-08-26 · Data retrieved on: 2026-08-26 10:29 UTC
-Price: $0.4030 · Rating: HOLD · Mean analyst target: $8.25
+**Header, data quality warnings and clinical pipeline.** Every asset in the
+pipeline is listed with its NCT identifier, so each claim can be checked
+against the registry.
 
-⚠️ Data quality warnings
- · Mean analyst target ($8.25) is 20.5 times the current price ($0.40):
-   likely stale after a reverse split or a sharp decline.
- · Short interest is 12 days old: FINRA measures it twice a month, so the
-   figure is structurally lagging at any source.
+![Report header and clinical pipeline](screenshot/report-header-and-pipeline.png)
 
-FINANCIAL ANALYSIS
-  Market capitalisation         $7,841,088
-  Float                         19,443,174
-  Short interest as % of float  5.86% (2026-08-14)
-  Quarterly cash burn           $3,156,097
-  Cash runway                   0.6 months
-  Dilution risk score           100/100
+**Financial analysis.** Burn rate and cash runway are computed from SEC XBRL
+filings, never asked of the language model. Each figure carries the date it
+refers to.
 
-EXPECTED VALUE
-  Investment   Shares   Expected value   Return
-  $1,000       2,481.4  $893.30          -10.7%
-```
+![Financial analysis](screenshot/financial-analysis.png)
+
+**Main catalyst.** This is where the measured data does the work: the trial is
+270 days past its estimated completion date, and the registry history shows
+the date was revised three times for a cumulative 48-month slip — a fact that
+separates a one-off delay from a trend. The historical phase-success rate sits
+beside the model's own probability so the two can be compared.
+
+![Main catalyst analysis](screenshot/main-catalyst.png)
 
 The full report covers the clinical pipeline, an analysis of the main
 catalyst, three probability-weighted scenarios, acquisition likelihood, a
